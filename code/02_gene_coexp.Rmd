@@ -1,0 +1,735 @@
+---
+title: "Initial Exprolatory Data Analysis"
+author:
+- name: Elyas Heidari & Artem Lomakin
+  affiliation: 
+  - AI in Oncology, DKFZ Heidelberg
+output:
+  workflowr::wflow_html:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    number_sections: false
+---
+
+# Setup / definitions
+
+## Libraries
+
+```{r setup_knitr, include=FALSE}
+library('BiocStyle')
+options(bitmapType='cairo')
+set.seed(1996)
+knitr::opts_chunk$set( autodep=TRUE, cache=TRUE, cache.lazy=FALSE, dev='png' )
+knitr::opts_knit$set( root.dir='..' )
+# wflow_build(files='analysis/00_initial_eda.Rmd', view=F, verbose=T, delete_cache=T)
+```
+
+```{r setup_libs, collapse=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+suppressMessages(source('code/R/dep.R')) 
+```
+
+## Helper functions
+
+```{r setup_helpers, message=FALSE, cache=TRUE}
+suppressMessages(source('code/R/utils.R')) 
+suppressMessages(source('code/R/analysis_constants.R')) 
+library("spatialLIBD")
+# source('code/R/sma01_eda.R')
+```
+
+## Paths
+
+```{r setup_input}
+tag       = '00_anndata_objects' 
+# ref_tag   = 'embryo1_2'
+data_raw_dir  = 'data_raw'
+data_tidy_dir = 'data_tidy'
+out_dir   =  file.path('output', tag)
+
+decodes_dir = 'data_raw/decodes'
+decodes_f   = list.files(decodes_dir, full.names=TRUE)
+decodes_tags = decodes_f %>% 
+    purrr::map(~str_replace(.x, pattern='data_raw/decodes/', replacement='')) %>% 
+    purrr::map(~str_replace(.x, pattern='_DECODEv1.csv', replacement='')) %>% 
+    unlist
+names(decodes_f) = decodes_tags
+
+nodules_anno_dir = 'data_raw/nodule_annotations_final'
+nodules_anno_f   = list.files(nodules_anno_dir, full.names=TRUE)
+nodules_anno_tags = nodules_anno_f %>% 
+    purrr::map(~str_replace(.x, pattern='data_raw/nodule_annotations_final/', replacement='')) %>%
+    purrr::map(~str_replace(.x, pattern='\\.csv', replacement='')) %>%
+    unlist
+names(nodules_anno_f) = nodules_anno_tags
+
+
+samples_f     = list.dirs(data_raw_dir, recursive=FALSE) %>% str_subset('ML')
+samples_tags  = samples_f %>% purrr::map(~str_replace(.x, pattern='data_raw/', replacement='')) %>% unlist
+names(samples_f) = samples_tags
+
+obj_dir  = file.path('objects', tag)
+dir.create(obj_dir)
+obj_list = list()
+fig_dir  = file.path('output', tag)
+dir.create(fig_dir)
+fig_list = list()
+```
+
+
+## Load inputs
+
+```{r load_inputs, fig.height=8, fig.width=8, results='asis', cache=TRUE}
+adata = zellkonverter::readH5AD('data_tidy/joint_coexp_2024_02_29.h5ad')
+# adata = adata[,colData(adata)$batch == 'ML_I']
+counts(adata) = assays(adata)[['X']]
+adata = adata[is.na(rowData(adata)$Plasmid),]
+remove_empty_spots <- function(spe){
+    spe = spe[,colSums(counts(spe)) != 0]
+    spe = spe[rowSums(counts(spe)) != 0,]
+    spe
+}
+adata = remove_empty_spots(adata)
+adata = scuttle::logNormCounts(adata)
+to_keep = rownames(rowData(adata) %>% .[.$tumor != 'NaN' | .$tme != 'NaN',])# |!is.na(.$Plasmid), ] ) # | .$sig !='NaN',
+
+exprs = counts(adata) %>%
+    t %>% 
+    as.data.table
+cor =    cov.wt(exprs , method='ML')$cov %>%
+    cov2cor 
+exprs = cor %>%
+    glasso::glasso(rho=0.2) %>%
+    .$wi 
+rownames(exprs ) = colnames(exprs) =rownames(adata) 
+exprs2 = exprs
+cor2 = cor
+exprs2[to_keep, to_keep] = exprs2[to_keep, to_keep] + ifelse( exprs2[to_keep, to_keep] > 0, .3, ifelse( exprs2[to_keep, to_keep] < 0, -.3, 0))
+cor2[to_keep, to_keep] = cor2[to_keep, to_keep] + .1
+# cor2[to_keep] = cor2[to_keep] * 2
+exprs2 = abs(exprs2) * (cor2 > 0.25)
+exprs_bin =  (exprs2 != 0)
+diag(exprs_bin ) = F
+rownames(exprs_bin ) = colnames(exprs_bin) =rownames(adata) #= to_keep
+rownames(exprs2 ) = colnames(exprs2) =rownames(adata) # = to_keep
+to_keep_expand =names(which(colSums(exprs_bin[to_keep,]) >0))
+exprs_bin = exprs_bin[to_keep_expand, to_keep_expand]
+to_keep = intersect(to_keep, rownames(exprs_bin))
+exprs_bin = exprs_bin[rev(c(to_keep, setdiff(rownames(exprs_bin), to_keep))), rev(c(to_keep, setdiff(rownames(exprs_bin), to_keep)))]
+edge_imp = rownames(rowData(adata) %>% .[(.$tumor != 'NaN' & .$tumor != 'tumor_add_on') | (.$tme != 'NaN' & .$tme != 'tme_add_on'),])
+edge_imp = intersect(edge_imp, rownames(exprs_bin))
+exprs_bin = exprs_bin[rev(c(edge_imp, rev(setdiff(rownames(exprs_bin), edge_imp)))), rev(c(edge_imp, rev(setdiff(rownames(exprs_bin), edge_imp))))]
+
+exprs_graph = graph_from_adjacency_matrix(exprs_bin) %>%
+    as.undirected %>%
+    remove_isolated_nodes
+# cons_graph = as.undirected(cons_graph)
+
+gg = rowData(adata)[names(V(exprs_graph)),]
+exprs_mem = ifelse(
+    gg$tumor != 'NaN', as.character(gg$tumor), 
+    ifelse(gg$tme != 'NaN', as.character(gg$tme), 'NaN')) 
+        # ifelse(gg$pheno != 'NaN', as.character(gg$pheno), 
+        #     ifelse(gg$sig != 'NaN', as.character(gg$sig), 
+        #         ifelse(!is.na(gg$Plasmid), as.character(gg$Plasmid), 'NaN')))))
+names(exprs_mem) = names(V(exprs_graph))
+exprs_lay = layout_nicely(exprs_graph)
+V(exprs_graph)$labels = names(exprs_mem)
+
+celltype_cols_static = c(
+#   'Mesenchymal'     = '',
+  'Fibroblasts'     = '#ffff00',
+  'Erythrocytes'    = '#de7812',
+  'Kupffer cells'   = '#000075',
+  'Neutrophils'     = '#7BAFDE',
+  'Platelets'       = '#f9decf',
+#   'NK cells'        = '#bbe30b',
+  'B cells'         = '#4fe30b',
+#   'T cells'         = '#4fe30b',
+  'Mast cells'      = '#B51D8D',
+#   'Endothelial'     = '#7BAFDE',
+  'Periportal HCC'  = '#FACB12',
+  'Pericentral HCC' = '#FF2F00',
+  'Cholangiocytes'  = '#32a8a6',
+  'Histone'         = "#DFCDE4",
+  'tumor_add_on'          = '#9e6762',
+  'tme_add_on'          = '#9e6762',
+  'Other'   =   '#E7298A',
+  'NaN' = '#D2EAF6'
+)
+
+to_keep = c(to_keep, 'Sox9')
+
+pdf('output/test_coexp_graph_03_23_hvgs.pdf', height=50, width=50)
+igraph::V(exprs_graph)$size = ifelse(names(V(exprs_graph)) %in% to_keep, 5, 2)
+igraph::V(exprs_graph)$label.cex = ifelse(names(V(exprs_graph)) %in% to_keep, 2.5, 1)
+igraph::V(exprs_graph)$frame.width = ifelse(names(V(exprs_graph)) %in% to_keep, 5, 0)
+igraph::V(exprs_graph)$frame.color = ifelse(names(V(exprs_graph)) %in% to_keep, 'black', 0)
+E(exprs_graph)$color = ifelse((exprs_mem[tail_of(exprs_graph, E(exprs_graph))] == exprs_mem[head_of(exprs_graph, E(exprs_graph))]) & names(tail_of(exprs_graph, E(exprs_graph))) %in% edge_imp, celltype_cols_static[exprs_mem[head_of(exprs_graph, E(exprs_graph))]], '#C1BFBF')
+E(exprs_graph)$width = ifelse((exprs_mem[tail_of(exprs_graph, E(exprs_graph))] == exprs_mem[head_of(exprs_graph, E(exprs_graph))]) & names(tail_of(exprs_graph, E(exprs_graph))) %in% edge_imp, 25, 1)
+# E(exprs_graph)$edge.color = 'black'
+# rownames(exprs_lay) = names(V(exprs_graph))
+# V(exprs_graph) = c(edge_imp, setdiff(names(V(exprs_graph)), edge_imp))
+# exprs_lay = exprs_lay[names(V(exprs_graph)), ]
+gg = graph_col_comm(
+    graph  = exprs_graph, 
+    lay    = exprs_lay * 2, 
+    # sz = ,
+    # grp    = colorjam::rainbowJam(length(unique(exprs_mem)))[as.numeric(as.factor(exprs_mem))], 
+    grp    = celltype_cols_static[exprs_mem],
+    title  = 'Gene Interaction Netwrok on Markers and Highly Variable Genes', 
+    labels = names(exprs_mem)
+)
+print(gg)
+dev.off()
+
+pp = graph_col_act(cons_graph, act_all_leiden[[sample_tag]][l, names(V(cons_graph))], cons_lay, sprintf('%s: %s', sample_tag, l))
+
+
+
+add_genes = setdiff(rownames(adata), names(exprs_mem))
+add_mem   = rep(max(exprs_mem)+1, length(add_genes))
+names(add_mem) = add_genes
+exprs_mem  = c(exprs_mem, add_mem)
+
+gg = exprs_list %>%
+    map(t) %>%
+    map(get_network, rho = .1, threshold = .075) %>%
+    map(as.undirected) %>%
+    map(remove_isolated_nodes)
+
+
+# cons_graph = graph_from_adjacency_matrix(cons_adj_bin) %>%
+#     as.undirected
+
+memberships = gg %>%
+    map(cluster_louvain) %>%
+    map(membership)
+
+act_all_nodules  = samples_tags %>% 
+    map(~act_colors(t(exprs_list[[.x]]), samples[[.x]]$nodule))
+names(act_all_nodules) = samples_tags
+
+
+
+adata_q = zellkonverter::readH5AD('data_tidy/integrated_query_nodules_umapped_17_08_2023.h5ad')
+
+col_dt_all = colData(adata_q) %>%
+    as.data.table %>% setkey('Barcode') %>% 
+    .[,c('Barcode', 'section', 'nodule', 'leiden_sagenet_high')]
+
+
+
+
+for(sample_tag in samples_tags){
+
+       print(sample_tag)
+       col_dt_1 = colData(samples[[sample_tag]]) %>% as.data.table %>% setkey('Barcode')
+       col_dt_2 = col_dt_all[section==sample_tag]
+        colData(samples[[sample_tag]]) = 
+            col_dt_2[col_dt_1, all=TRUE] %>%
+            .[, leiden_sagenet_high := ifelse(is.na(leiden_sagenet_high), 'normal', leiden_sagenet_high)] %>% 
+            .[, nodule := ifelse(is.na(nodule), 'normal', nodule)] %>%
+            DataFrame
+}
+
+act_all_leiden  = samples_tags %>% 
+    map(~act_colors(t(exprs_list[[.x]][intersect(rownames(adata), markers),]), samples[[.x]]$leiden_sagenet_high))
+names(act_all_leiden) = samples_tags
+
+
+act_all_voted  = samples_tags %>% 
+    purrr::map(~act_colors(t(exprs_list[[.x]][shared_genes,]), samples[[.x]]$voted_nodule))
+names(act_all_voted) = samples_tags
+
+# act_all_leiden  = samples_tags %>% 
+#     map(~act_colors(t(exprs_list[[.x]]), samples[[.x]]$leiden_sagenet_high))
+# names(act_all_leiden) = samples_tags
+
+# lay = layout_nicely(gg[[1]])
+
+# for(nodule in rownames(act_all_nodules)){
+#     graph_col_act(gg[[1]], act_all_nodules[nodule, names(V(gg[[1]]))], lay, sprintf('%s: %s', samples_tags[1], nodule))
+# }
+
+# graph_col_comm(
+#     graph  = gg[[1]], 
+#     lay    = lay, 
+#     grp    = .palette1[memberships[[1]]], 
+#     title  = 'GGM on ML_I', 
+#     labels = names(memberships[[1]])
+# )
+
+
+SingleCellExperiment(
+        assays = list(counts=counts(sample_joint)),
+        colData = colData(sample_joint)) %>% zellkonverter::writeH5AD(file = sprintf(file.path(data_tidy_dir, 'joint_object_markers.h5ad')))
+
+sample_joint  %>% zellkonverter::writeH5AD(file = sprintf(file.path(data_tidy_dir, 'joint_object_markers.h5ad')))
+samples_tags %>%
+    map(~SingleCellExperiment(
+        assays = list(counts=counts(samples[[.x]])),
+        colData = colData(samples[[.x]]),
+        # rowData = rowData(samples[[.x]]),
+        # metadata = list(adj = cons_adj_bin * 1, adj_local=as_adjacency_matrix(gg[[.x]]))
+    ) %>%
+    zellkonverter::writeH5AD(file = sprintf(file.path(data_tidy_dir, '%s/%s.h5ad'), 'markers', .x))
+)
+
+
+
+
+# SingleCellExperiment(
+#         assays = list(counts=exprs_list[[1]][shared_genes,]),
+#         colData = colData(samples[[1]]),
+#         # rowData = rowData(samples[[1]]),
+#         metadata = list(adj = cons_adj_bin * 1, adj_local=as_adjacency_matrix(gg[[1]]))
+#     ) %>% writeH5AD('data_tidy/test.h5ad')
+# data_tidy/01_sagenet_integration/integrated_query_umapped.h5ad
+
+# for(mem in unique(cons_mem)){
+#     gene_list = names(which(cons_mem == mem))
+#     res = enrichr(genes = gene_list, databases = "PanglaoDB_Augmented_2021")[[1]]
+
+#     par(mfrow = c(1, 1), mar = c(3, 25, 2, 1))
+#     barplot(height = -log10(res$P.value)[5:1], names.arg = res$Term[5:1],
+#         horiz = TRUE, las = 1, border = FALSE, cex.names = 0.6)
+#     abline(v = c(-log10(0.05)), lty = 2)
+#     abline(v = 0, lty = 1)
+# }
+
+
+
+
+
+```
+
+
+```{r}
+nodule_markers =  vector("list", length(unique(adata_q$leiden_sagenet_high)))
+names(nodule_markers) = unique(adata_q$leiden_sagenet_high)
+for(s in samples_tags){
+    fm = findMarkers(samples[[s]], groups=samples[[s]]$leiden_sagenet_high, pval.type='some', min.prop=0.8)
+    for(cl in unique(samples[[s]]$leiden_sagenet_high)){
+        if(sum(samples[[s]]$leiden_sagenet_high == cl) <100){
+            
+        }else{
+            fmcl = fm[[cl]] %>% .[.$summary.logFC > 0,] %>% .[order(.$FDR),] %>% .[1:50,] %>% .[.$FDR < 0.01,]
+            genes = rowData(samples[[s]])[rownames(fmcl),]
+            nodule_markers[[cl]] =  c(nodule_markers[[cl]], genes)
+        }
+    }
+}
+nodule_markers %>% map(table) %>% map(sort, decreasing=TRUE) %>% map(~names(which(.x>1))) -> results
+
+```
+# Analysis
+
+
+## Integrated space{.tabset}
+
+
+```{r sp_combined, message=FALSE, warning=FALSE, fig.height=8, fig.width=18, results='asis', cache=TRUE}
+
+
+
+
+umap = reducedDim(adata_q, 'X_umap')
+p_umap1 = plot_2d(umap, adata_q$section, label_cols=.palette3, label_title='sample') 
+p_umap2 = plot_2d(umap, adata_q$leiden_sagenet_high, label_cols=.palette2, label_title='(integrated) nodule') 
+p = p_umap1 + p_umap2
+
+# umap_sagenet = reducedDim(adata_q, 'X_umap_sagenet')
+# p_umap_sagenet = plot_2d(umap_sagenet, adata_q$section, label_cols=.palette_all) + ggtitle('SageNet')
+
+# p_umap_sagenet_clus = plot_2d(umap_sagenet, factor(adata_q$leiden_sagenet_high), label_cols=.palette_all) + ggtitle('SageNet')
+
+
+# p = p_umap + p_umap_sagenet + p_umap_sagenet_clus + plot_layout(ncol = 3, guides='collect')
+
+print(p)
+
+
+```
+
+
+## Spatial maps{.tabset}
+
+```{r sp_all, message=FALSE, warning=FALSE, fig.height=8, fig.width=17, results='asis', cache=TRUE}
+
+leiden_cols = .palette2[as.numeric(as.factor(unique(adata_q$leiden_sagenet_high)))]
+        names(leiden_cols) = unique(adata_q$leiden_sagenet_high)
+leiden_cols = c(leiden_cols, c('normal' = '#999999'))
+
+for(sample_tag in samples_tags){
+
+    
+
+    cat('### ', sample_tag, '{.tabset}\n')
+
+
+        cols = .palette_all[as.numeric(as.factor(unique(samples[[sample_tag]]$nodule)))]
+        names(cols) = unique(samples[[sample_tag]]$nodule)
+        col_dt = colData(samples[[sample_tag]]) %>% as.data.table
+        col_dt[, `:=`(voted_nodule=names(which.max(table(leiden_sagenet_high))), purity=max(table(leiden_sagenet_high))/sum(table(leiden_sagenet_high))), by='nodule']
+        colData(samples[[sample_tag]]) = DataFrame(col_dt)
+
+
+        
+
+        p_vis_nodule = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "nodule",
+            colors = cols, 
+            size=4,
+            alpha=0.8,
+            sample_id ='initial annotation',
+        )  + ggtitle(sample_tag) + theme(legend.position='none') 
+
+        p_vis_leiden = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "leiden_sagenet_high",
+            colors = leiden_cols, 
+            size=4,
+            alpha=0.8,
+            sample_id ='unified annotation',
+        )  + ggtitle('unified annotation') + theme(legend.position='none') 
+
+        p_vis_voted = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "voted_nodule",
+            colors = leiden_cols, 
+            size=4,
+            alpha=samples[[sample_tag]]$purity,
+            sample_id ='max voted annotation',
+        )  + ggtitle('max voted annotation')
+       
+
+        p = p_vis_nodule + p_vis_leiden  + 
+        p_vis_voted + 
+        plot_layout(ncol = 3, guides='collect')
+
+        print(p)
+    
+    cat('\n\n')
+
+}
+
+
+
+```
+
+
+
+```{r gg}
+leiden_cols = .palette2[as.numeric(as.factor(unique(adata_q$leiden_sagenet_high)))]
+        names(leiden_cols) = unique(adata_q$leiden_sagenet_high)
+leiden_cols = c(leiden_cols, c('normal' = '#999999'))
+
+for(n in nodule){
+    
+}
+
+for(sample_tag in samples_tags){
+
+    
+
+    cat('### ', sample_tag, '{.tabset}\n')
+
+
+        cols = .palette_all[as.numeric(as.factor(unique(samples[[sample_tag]]$nodule)))]
+        names(cols) = unique(samples[[sample_tag]]$nodule)
+        col_dt = colData(samples[[sample_tag]]) %>% as.data.table
+        col_dt[, `:=`(voted_nodule=names(which.max(table(leiden_sagenet_high))), purity=max(table(leiden_sagenet_high))/sum(table(leiden_sagenet_high))), by='nodule']
+        colData(samples[[sample_tag]]) = DataFrame(col_dt)
+
+
+        
+
+        p_vis_nodule = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "nodule",
+            colors = cols, 
+            size=4,
+            alpha=0.8,
+            sample_id ='initial annotation',
+        )  + ggtitle(sample_tag) + theme(legend.position='none') 
+
+        p_vis_leiden = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "leiden_sagenet_high",
+            colors = leiden_cols, 
+            size=4,
+            alpha=0.8,
+            sample_id ='unified annotation',
+        )  + ggtitle('unified annotation') + theme(legend.position='none') 
+
+        p_vis_voted = vis_clus(
+            spe = samples[[sample_tag]],
+            clustervar = "voted_nodule",
+            colors = leiden_cols, 
+            size=4,
+            alpha=samples[[sample_tag]]$purity,
+            sample_id ='max voted annotation',
+        )  + ggtitle('max voted annotation')
+       
+
+        p = p_vis_nodule + p_vis_leiden  + 
+        p_vis_voted + 
+        plot_layout(ncol = 3, guides='collect')
+
+        print(p)
+    
+    cat('\n\n')
+
+}
+
+```
+
+
+## Expression heatmaps of gene modules and nodules{.tabset}
+
+Gene modules come from the Consensus graph. Expression values computed on each slide separately.
+
+
+### Unified annotation{.tabset}
+
+```{r hm_unified, message=FALSE, warning=FALSE, fig.height=22, fig.width=10, results='asis', cache=TRUE}
+
+for(sample_tag in samples_tags){
+
+    act_leiden = act_all_leiden[[sample_tag]]
+    act_leiden = act_leiden[,intersect(shared_genes, markers)]
+
+    cat('#### ', sample_tag, '{.tabset}\n')
+        mtx = t(act_leiden)
+        col_cols = leiden_cols[rownames(act_leiden)]
+        names(col_cols) = rownames(act_leiden)
+        col_annots  = HeatmapAnnotation(
+            group                = rownames(act_leiden), 
+            col                  = list(group  = col_cols),
+            annotation_name_side = 'left', 
+            show_legend          = c(group=FALSE)
+        )
+
+        row_cols = type_cols[markers_vec[intersect(shared_genes, markers)]]
+        names(row_cols) = markers_vec[intersect(shared_genes, markers)]
+        # names(row_cols) = comm_dt$community
+        row_annots  = rowAnnotation(
+            gene_module          = markers_vec[intersect(shared_genes, markers)], 
+            col                  = list(gene_module  = row_cols),
+            show_legend          = c(gene_module=FALSE)
+            
+        )
+
+        grp_vals  = seq(min(mtx), max(mtx), length.out=9)
+        grp_cols  = circlize::colorRamp2(grp_vals, viridis::viridis(9))
+        if(dim(as.matrix(mtx))[2] > 1){
+            seriate_obj  = seriate(as.matrix(mtx - min(mtx)), method = "BEA_TSP")
+            row_order    = get_order(seriate_obj, 1)
+            column_order = get_order(seriate_obj, 2)
+        }else{
+            row_order    = 1:length(mtx)
+            column_order = 1
+        }
+
+        # do heatmap for these genes
+        hm_obj      = Heatmap(
+            matrix=mtx, col=grp_cols,
+            row_order=row_order, 
+            cluster_rows=TRUE, cluster_columns=TRUE,
+            row_names_gp=gpar(fontsize = 8), column_names_gp=gpar(fontsize = 10),
+            name="Scaled\nGene Expression", 
+            row_names_side="right",
+            column_names_side="top",
+            row_split=markers_vec[intersect(shared_genes, markers)],
+            cluster_column_slices=FALSE,
+            top_annotation=col_annots, left_annotation=row_annots,
+            # row_title_rot = 30,
+            row_title_gp = gpar(fontsize = 5)
+            )
+        draw(hm_obj, column_title=sample_tag)
+    
+    
+    cat('\n\n')
+
+}
+```
+
+### Preliminary annotation{.tabset}
+
+```{r hm_all, message=FALSE, warning=FALSE, fig.height=22, fig.width=10, results='asis', cache=TRUE}
+
+for(sample_tag in samples_tags){
+
+    act_nodule = act_all_nodules[[sample_tag]]
+    act_nodule = act_nodule[,names(cons_mem)]
+
+    cat('#### ', sample_tag, '{.tabset}\n')
+        mtx = t(act_nodule)
+        col_cols = .palette_all[1:nrow(act_nodule)]
+        names(col_cols) = rownames(act_nodule)
+        col_annots  = HeatmapAnnotation(
+            group                = rownames(act_nodule), 
+            col                  = list(group  = col_cols),
+            annotation_name_side = 'left', 
+            show_legend          = c(group=FALSE)
+        )
+
+        row_cols = .palette1[cons_mem]
+        names(row_cols) = cons_mem
+        # names(row_cols) = comm_dt$community
+        row_annots  = rowAnnotation(
+            gene_module          = cons_mem, 
+            col                  = list(gene_module  = row_cols),
+            show_legend          = c(gene_module=FALSE)
+        )
+
+        grp_vals  = seq(min(mtx), max(mtx), length.out=9)
+        grp_cols  = circlize::colorRamp2(grp_vals, viridis::viridis(9))
+        if(dim(as.matrix(mtx))[2] > 1){
+            seriate_obj  = seriate(as.matrix(mtx - min(mtx)), method = "BEA_TSP")
+            row_order    = get_order(seriate_obj, 1)
+            column_order = get_order(seriate_obj, 2)
+        }else{
+            row_order    = 1:length(mtx)
+            column_order = 1
+        }
+
+        # do heatmap for these genes
+        hm_obj      = Heatmap(
+            matrix=mtx, col=grp_cols,
+            row_order=row_order, 
+            cluster_rows=TRUE, cluster_columns=TRUE,
+            row_names_gp=gpar(fontsize = 8), column_names_gp=gpar(fontsize = 10),
+            name="Scaled\nGene Expression", 
+            row_names_side="left",
+            column_names_side="top",
+            row_split=cons_mem,
+            cluster_column_slices=FALSE,
+            top_annotation=col_annots, left_annotation=row_annots
+            )
+        draw(hm_obj)
+    
+    
+    cat('\n\n')
+
+}
+```
+
+## Separated gene interaction graphs{.tabset}
+```{r ggm_sep_new, fig.height=8, fig.width=8, results='asis', cache=TRUE}
+for(sample_tag in samples_tags){
+
+    # lay = layout_nicely(gg[[sample_tag]])
+
+    cat('### ', sample_tag, '{.tabset}\n')
+
+    # cat('#### gene interaction network{.tabset}\n')
+    #     cat('##### \n')
+    #     graph_col_comm(
+    #         graph  = gg[[sample_tag]], 
+    #         lay    = lay, 
+    #         grp    = .palette1[memberships[[sample_tag]]], 
+    #         title  = sprintf('gene interaction network on %s', sample_tag),
+    #         labels = names(memberships[[sample_tag]])
+    #     )
+    #     cat('\n\n')
+    # cat('\n\n')
+
+    cat('#### gene activities{.tabset}\n')
+
+    for(l in sort(rownames(act_all_leiden[[sample_tag]]))){
+        cat('##### ', l, '\n')
+        pp = graph_col_act(cons_graph, act_all_leiden[[sample_tag]][l, names(V(cons_graph))], cons_lay, sprintf('%s: %s', sample_tag, l))
+        print(pp)
+        cat('\n\n')
+    }
+
+    cat('\n\n')
+    
+    
+    cat('\n\n')
+
+}
+```
+
+
+
+## Separated gene interaction graphs{.tabset}
+```{r ggm_sep, fig.height=8, fig.width=8, results='asis', cache=TRUE}
+for(sample_tag in samples_tags){
+
+    lay = layout_nicely(gg[[sample_tag]])
+
+    cat('### ', sample_tag, '{.tabset}\n')
+
+    cat('#### gene interaction network{.tabset}\n')
+        cat('##### \n')
+        graph_col_comm(
+            graph  = gg[[sample_tag]], 
+            lay    = lay, 
+            grp    = .palette1[memberships[[sample_tag]]], 
+            title  = sprintf('gene interaction network on %s', sample_tag),
+            labels = names(memberships[[sample_tag]])
+        )
+        cat('\n\n')
+    cat('\n\n')
+
+    cat('#### gene activities{.tabset}\n')
+    cat('##### jojo\n')
+    pp = graph_col_act(cons_graph, act_all_nodules[[sample_tag]][1, names(V(cons_graph))], lay, sprintf('%s: %s', sample_tag, 'test'))
+        print(pp)
+    cat('\n\n') 
+
+    for(nodule in rownames(act_all_nodules[[sample_tag]])){
+        cat('##### ', nodule, '\n')
+        pp = graph_col_act(cons_graph, act_all_nodules[[sample_tag]][nodule, names(V(cons_graph))], lay, sprintf('%s: %s', sample_tag, nodule))
+        print(pp)
+        cat('\n\n')
+    }
+
+    cat('\n\n')
+    
+    
+    cat('\n\n')
+
+}
+```
+
+
+# Outputs
+
+```{r save_outputs}
+for(sample_tag in samples_tags){
+    sample_coldt = colData(samples[[sample_tag]]) %>% as.data.table
+    sample_coldt$Barcode = colnames(samples[[sample_tag]])
+    sample_coldt %<>% .[nodules_anno[[sample_tag]], on='Barcode']
+    sample_coldf = DataFrame(sample_coldt)
+    rownames(sample_coldf) = sample_coldt$Barcode
+    sample_coldf %<>% .[colnames(samples[[sample_tag]]),]
+    colData(samples[[sample_tag]]) = sample_coldf
+}
+
+for(sample_tag in samples_tags){
+    colData(samples_raw[[sample_tag]])$Barcode = colnames(samples_raw[[sample_tag]])
+    col_dt_1 = colData(samples_raw[[sample_tag]]) %>% as.data.table %>% setkey('Barcode')
+    col_dt_2 = col_dt_all[section==sample_tag]
+    colData(samples_raw[[sample_tag]]) = 
+         col_dt_2[col_dt_1, all=TRUE] %>%
+         .[, leiden_sagenet_high := ifelse(is.na(leiden_sagenet_high), 'normal', leiden_sagenet_high)] %>% 
+         DataFrame
+    nodule_counts = table(samples_raw[[sample_tag]]$leiden_sagenet_high)
+    to.rm = names(nodule_counts < 50)
+    samples_raw[[sample_tag]] = samples_raw[[sample_tag]][, !(samples_raw[[sample_tag]]$leiden_sagenet_high %in% to.rm)]
+    
+}
+
+scran::findMarkers(samples_raw[[1]], samples_raw[[1]]$leiden_sagenet_high)
+
+
+```
+
+```{r session_info, include=TRUE, echo=TRUE, results='markup'}
+devtools::session_info()
+```
