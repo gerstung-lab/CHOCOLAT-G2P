@@ -1,0 +1,908 @@
+---
+title: "Initial Exprolatory Data Analysis"
+author:
+- name: Elyas Heidari & Artem Lomakin
+  affiliation: 
+  - AI in Oncology, DKFZ Heidelberg
+output:
+  workflowr::wflow_html:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    number_sections: false
+---
+
+# Setup / definitions
+
+## Libraries
+
+```{r setup_knitr, include=FALSE}
+library('BiocStyle')
+options(bitmapType='cairo')
+set.seed(1996)
+knitr::opts_chunk$set( autodep=TRUE, cache=TRUE, cache.lazy=FALSE, dev='png' )
+knitr::opts_knit$set( root.dir='..' )
+# wflow_build(files='analysis/00_initial_eda.Rmd', view=F, verbose=T, delete_cache=T)
+```
+
+```{r setup_libs, collapse=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+suppressMessages(source('code/R/dep.R')) 
+```
+
+## Helper functions
+
+```{r setup_helpers, message=FALSE, cache=TRUE}
+# suppressMessages(source('code/R/utils.R')) 
+# suppressMessages(source('code/R/analysis_constants.R')) 
+# library("spatialLIBD")
+
+suppressMessages(source('code/R/utils.R')) 
+suppressMessages(source('code/R/analysis_constants.R')) 
+library("spatialLIBD")
+library(anndata)
+library(viridis)
+library(ComplexHeatmap)
+library(tidyverse)
+library(zellkonverter)
+library(dendsort)
+# source('code/R/sma01_eda.R')
+```
+
+## Paths
+
+```{r setup_input}
+tag       = 'composed_anndata_objects_2023_12_13' 
+# /Users/b450-admin/Desktop/Projects/elyas_proj/new_projects_2023/perturb_cast_2023/data_tidy/geno_pheno_objs_2023_12_05
+# ref_tag   = 'embryo1_2'
+data_tidy_dir = 'data_tidy'
+out_dir   =  file.path('output', tag)
+
+adata_dir = file.path(data_tidy_dir, tag)
+
+adata_f   = list.files(adata_dir, full.names=TRUE) 
+# adata_f[grep('\\.h5ad', adata_f)] %>% map(~Convert(.x, "h5seurat", overwrite=T))
+adata_f  = list.files(adata_dir, full.names=TRUE) %>% .[grep('\\.h5ad', .)]
+
+adata_tags = adata_f %>% 
+    purrr::map(~str_replace(.x, pattern=adata_dir, replacement='')) %>%
+    purrr::map(~str_replace(.x, pattern='\\.h5ad', replacement='')) %>%
+    purrr::map(~str_replace(.x, pattern='/geno_pheno_', replacement='')) %>%
+    unlist
+names(adata_f) = adata_tags
+
+obj_dir  = file.path('objects', tag)
+dir.create(obj_dir)
+obj_list = list()
+fig_dir  = file.path('output', tag)
+dir.create(fig_dir)
+fig_list = list()
+```
+
+
+## Analysis constants
+
+```{r constants, fig.height=8, fig.width=8, results='asis', cache=TRUE}
+library(anndata)
+adata = anndata::read_h5ad('data_tidy/new_geno_nodule_2024_01_30.h5ad')
+#reticulate::install_miniconda()
+
+library(circlize)
+col_fun = colorRamp2(c(0, 1), c("white", "black"))
+
+
+plasmids = c(
+    'MYC',
+    'NICD',
+    'coVEGFA',
+    'mtCtnnb1',
+    'shMLL3',
+    'shPTEN',
+    'shRen',
+    'shtrp53'
+)
+
+names(plasmids) = plasmids
+plasmid_cols = c(
+    'MYC.plasmid'      = colorRamp2(c(0, 1), c("white", "#56B4E9")),
+    'NICD.plasmid'     = colorRamp2(c(0, 1), c("white", "#E69F00")),
+    'coVEGFA.plasmid'  = colorRamp2(c(0, 1), c("white", "#CC79A7")),
+    'mtCtnnb1' = colorRamp2(c(0, 1), c("white", "black")),
+    'shMLL3.plasmid'   = colorRamp2(c(0, 1), c("white", "#0072B2")),
+    'shPTEN.plasmid'   = colorRamp2(c(0, 1), c("white", "#009E73")),
+    'shRen.plasmid'    = colorRamp2(c(0, 1), c("white", "#F0E442")),
+    'shtrp53.plasmid'  = colorRamp2(c(0, 1), c("white", "#D55E00"))
+)
+
+plasmid_cols_stat = c(
+    'MYC.plasmid'      = "#56B4E9",
+    'NICD.plasmid'     = "#E69F00",
+    'coVEGFA.plasmid'  = "#CC79A7",
+    'mtCtnnb1' = "black",
+    'shMLL3.plasmid'   = "#0072B2",
+    'shPTEN.plasmid'   = "#009E73",
+    'shRen.plasmid'    = "#F0E442",
+    'shtrp53.plasmid'  = "#D55E00"
+)
+bl_red = colorRamp2(c(0, 1), c("white", "red"))
+
+
+plasmid_order = c(
+    'MYC-plasmid',
+    'mtCtnnb1',
+    'coVEGFA-plasmid',
+    'shMLL3-plasmid',
+    'NICD-plasmid',
+    'shRen-plasmid',
+    'shtrp53-plasmid',
+    'shPTEN-plasmid')
+
+
+celltype_cols_static = c(
+#   'Mesenchymal'     = '',
+  'fibroblast'     = '#ffff00',
+  'erythroblast'    = '#de7812',
+  'kupffer cell/macrophage'   = '#000075',
+  'neutrophil'     = '#7BAFDE',
+  'platelet'       = '#f9decf',
+#   'NK cells'        = '#bbe30b',
+  'B cell'         = '#4fe30b',
+#   'T cells'         = '#4fe30b',
+  'mast cell'      = '#B51D8D',
+#   'Endothelial'     = '#7BAFDE',
+  'portal'  = '#FACB12',
+  'central' = '#FF2F00',
+  'cholangiocytic'  = '#32a8a6',
+  'histone-enriched'         = "#DFCDE4",
+  'tumor_add_on'          = 'white',
+  'tme_add_on'          = 'white',
+  'Hamp2/Upp2-enriched'   =   '#E7298A',
+  'NaN' = 'white'
+)
+
+tumor_genes_order = rev(c('cholangiocytic', 'portal', 'central', 'Hamp2/Upp2-enriched', 'histone-enriched', 'tumor_add_on'))
+tme_genes_order = c('fibroblast', 'erythroblast', 'mast cell', 'neutrophil', 'platelet', 'B cell', 'kupffer cell/macrophage', 'tme_add_on')
+tumor_order =rev(c('cholangiocytic', 'portal', 'central', 'Hamp2/Upp2-enriched', 'histone-enriched', 'Unclassified', 'Normal'))# , 'add_on' ))
+tme_order = c('fibroblast', 'erythroblast', 'mast cell', 'neutrophil', 'platelet', 'B cell', 'kupffer cell/macrophage')#, 'add_on') 
+tme_colors = c(
+        'Mesenchymal'    = colorRamp2(c(0, 1), c("white", '#FF2F00')),
+        'fibroblast_bin'    = colorRamp2(c(0, 1), c("white", '#ffff00')),
+        'erythroblast_bin'   = colorRamp2(c(0, 1), c("white", '#de7812')),
+        'kupffer cell/macrophage_bin'  = colorRamp2(c(0, 1), c("white", '#000075')),
+        'neutrophil_bin'    = colorRamp2(c(0, 1), c("white", '#7BAFDE')),
+        'platelet_bin'      = colorRamp2(c(0, 1), c("white", '#f9decf')),
+        'NK cells_bin'       = colorRamp2(c(0, 1), c("white", '#bbe30b')),
+        'B cell_bin'        = colorRamp2(c(0, 1), c("white", '#4fe30b')),
+        'T cells_bin'        = colorRamp2(c(0, 1), c("white", '#4fe30b')),
+        # 'Monocytes'      = colorRamp2(c(0, 1), c("white", '#73db46')),
+        'mast cell_bin'     = colorRamp2(c(0, 1), c("white", '#B51D8D'))
+        # 'Endothelial'    = colorRamp2(c(0, 1), c("white", '#7BAFDE'))
+)
+
+
+
+tumor_colors = c(
+        'portal_bin' = colorRamp2(c(0, 1), c("white", '#FACB12')),
+        'central_bin'= colorRamp2(c(0, 1), c("white", '#FF2F00')),
+        'cholangiocytic_bin' = colorRamp2(c(0, 1), c("white", '#32a8a6')),
+        'histone-enriched_bin' = colorRamp2(c(0, 1), c("white", "#DFCDE4")),
+        'Hamp2/Upp2-enriched_bin' = colorRamp2(c(0, 1), c("white", '#E7298A'))
+)
+
+abv_types = c(
+
+  'fibroblast'     = 'Fibro.',
+  'erythroblast'    = 'Erythro.',
+  'kupffer cell/macrophage'   = 'Kupf.',
+  'neutrophil'     = 'Neut.',
+  'platelet'       = 'Plat.',
+  'B cell'         = 'B',
+  'mast cell'      = 'Mast',
+'cholangiocytic'  = 'chol.',
+  'portal'  = 'portal',
+  'central' = 'central',
+  'Hamp2/Upp2-enriched'   =   'Hamp2+/Upp2+',
+  'histone-enriched'         = 'histone+',
+  'Unclassified' = 'unclassified',
+  'Normal' = 'non-tumor'
+)
+
+# plasmid_cols = plasmids %>% map(function(x) col_fun)
+# plasmid_cols = append(plasmid_cols, list('expected_number'= 'red'))
+```
+
+
+## Global Heatmaps 6 ROIs
+
+
+```{r separated_heatmaps, fig.height=8, fig.width=8, results='asis', cache=TRUE}
+q_high = 0.95
+q_low  = 0.25
+adata = anndata::read_h5ad('data_tidy/new_geno_nodule_2024_04_03.h5ad')
+keys_6ROI = c('ML_III_A', 'ML_III_B', 'ML_II_A_1','ML_II_B', 'ML_II_C', 'ML_I_2')
+adata = adata[adata$obs$sample %in% keys_6ROI,]
+adata$var$tme_tumor = ifelse(adata$var$tme != 'NaN', adata$var$tme, ifelse(adata$var$tumor != 'NaN', adata$var$tumor, 'NaN'))
+tumor_core = adata$var_names[adata$var$tumor != 'add_on' & adata$var$tumor != 'NaN']
+tme_core = adata$var_names[adata$var$tme != 'add_on' & adata$var$tme != 'NaN']
+m  = t(adata[['X']])
+adata = adata[colSums(m) > quantile(colSums(m), 0.2),]
+m  = t(adata[['X']])
+m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+m[is.nan(m)] <- 0
+
+grp_vals     = seq(0, 1, length.out=20)
+grp_cols     = circlize::colorRamp2(grp_vals, pals::ocean.thermal(20))
+adata$obsm$plasmid_mask = adata$obsm$plasmid_mask[,plasmid_order]
+plasmid_mask = rev(data.frame((adata$obsm$plasmid_mask)))
+tumor_mask   = adata$obs[, intersect(colnames(adata$obs), setdiff(paste0(tumor_order, '_bin'), 'Unclassified_bin'))]
+tme_mask   = adata$obs[, paste0(tme_order, '_bin')]
+# ha_df      = cbind(plasmid_mask^10, tumor_mask, tme_mask)
+ha_df      = cbind(plasmid_mask^10)
+ha_cols = c(plasmid_cols, tumor_colors, tme_colors)
+ha_tumor  = HeatmapAnnotation(
+        df = ha_df[colSums(m) != 0,], 
+        col=ha_cols, show_legend=TRUE, 
+        gp = gpar(fontsize = 100), 
+        height = unit(1, "cm"), 
+        annotation_name_gp= gpar(fontsize = 0), 
+        annotation_height = unit(1, "cm"), 
+        simple_anno_size = unit(.1, "cm"),         
+        annotation_legend_param = list(direction = "horizontal", at = c(0, 1), labels_gp = gpar(font=1), legend_width = unit(3, "cm"), title_position = "topcenter")
+    )
+
+
+
+m = m[rownames(m) %in% adata$var_names[adata$var$tme_tumor != 'NaN'],]
+m[is.nan(m)] <- 0
+m = m[,colSums(m) != 0 ]
+split=factor(ifelse(adata$var[rownames(m),]['tme'] != 'NaN', 'TME', ifelse(adata$var[rownames(m),]['tumor'] != 'NaN', 'Tumor', 'add_on')), levels=c('Tumor', 'TME', 'add_on'))[rowSums(m) != 0]
+m = m[rowSums(m) != 0, ]
+# col_dend = dendsort(hclust(dist(plasmid_mask[colnames(m),]^5)))
+# row_dend = as.dendrogram(hclust(as.dist(1- cor(t(m[rownames(m) %in% tumor_core | rownames(m) %in% tme_core,]), method='spearman'))))
+
+
+df_tumor = adata$var[adata$var$tumor != 'NaN',]['tumor']
+tumor_genes = rownames(df_tumor)[rownames(df_tumor) %in% rownames(m)]
+tumor_genes = setdiff(tumor_genes, 'Vil1')
+df_tumor = df_tumor[tumor_genes,]
+names(df_tumor) = tumor_genes
+df_tumor =  as.character(df_tumor)
+names(df_tumor) = tumor_genes
+row_dend_tumor = hclust(as.dist(1- cor(t(m[tumor_genes,]), method='pearson')))
+row_split_tumor = cutree(row_dend_tumor, k= 7)
+row_split_tumor = (max(row_split_tumor)+1) - row_split_tumor %>% map(~max(match(df_tumor[names(which(row_split_tumor == .x))], tumor_genes_order))) %>% unlist()
+# max(match(df_tumor[names(which(row_split_tumor == 2))], tumor_order))
+# tumor_core = names(df_tumor) = rownames(m)[rownames(m) %in% tumor_core]
+# ra_tumor = Heatmap(df_tumor, name='signature', width = unit(0.5, "cm"), column_names_gp=gpar(fontsize = 0), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols, show_row_names =TRUE)
+ra_tumor = rowAnnotation(Tumor=df_tumor,col= list(Tumor=celltype_cols_static[as.character(unique(df_tumor))]), annotation_name_gp= gpar(fontsize = 0))
+set.seed(1375)
+# column_order = order(factor(adata[colnames(m),]$obs[,'dom_type'], ordered=TRUE, levels = c(tumor_order, 'add_on')))
+col_split =  factor(adata[colnames(m),]$obs[,'dom_tumor'], ordered=TRUE, levels = rev(tumor_order))
+# m = m[tumor_genes,]
+hm_tumor = Heatmap(
+        m[tumor_genes,]^2, 
+        # cluster_rows = row_dend_tumor,
+        row_split=row_split_tumor, 
+        column_split = factor(abv_types[as.character(col_split)], ordered=TRUE, levels=rev(abv_types)), 
+        # row_order = names(sort(df_tumor, decreasing=FALSE)),
+        # column_order = column_order,
+        row_title_gp = gpar(fontsize = 0),
+        # row_dend_reorder = FALSE,
+        row_names_gp=gpar(fontsize = 7.5),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(.2, "mm"),
+        left_annotation = ra_tumor,
+        # cluster_row_slices = FALSE,
+        # cluster_columns = col_dend,
+        # cluster_row_slices = FALSE,
+        cluster_column_slices = FALSE,
+        # clustering_distance_rows = 'spearman',
+        # show_row_names =FALSE,
+        # show_column_dend = FALSE,
+        row_names_side = 'left',
+        column_names_gp=gpar(fontsize = 0),
+        name="Scaled\nGene Expression", #column_title = region,  
+        column_title_gp = gpar(fontsize = 7.5, rot=0), 
+        column_title_rot = 0,
+        bottom_annotation =ha_tumor, col=grp_cols,
+        cluster_row_slices = FALSE,
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        width = unit(15, "cm"),
+        height= unit(10, "cm"),
+        row_names_centered = TRUE,
+
+        
+    )  # + ra_tumor
+
+# lgd_tumor = Legend(labels = setdiff(unique(adata$var$tumor), c('NaN', 'add_on')), title = "TME", legend_gp = gpar(col = celltype_cols_static),
+#     title_position = "leftcenter-rot")
+
+df_tme = adata$var[adata$var$tme != 'NaN',]['tme']
+tme_genes = rownames(df_tme)[rownames(df_tme) %in% rownames(m)]
+tme_genes = setdiff(tme_genes, 'Postn')
+df_tme = df_tme[tme_genes,]
+names(df_tme) = tme_genes
+# tme_core = names(df_tme) = rownames(m)[rownames(m) %in% tme_core]
+# ra_tme = Heatmap(df_tme, name='signature', width = unit(0.5, "cm"), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols_static, show_row_names =TRUE)
+set.seed(1375)
+row_dend_tme = hclust(as.dist(1- cor(t(m[tme_genes,]), method='pearson')))
+row_split_tme = cutree(row_dend_tme, k= 10)
+row_split_tme = (max(row_split_tme)+1) - (row_split_tme %>% map(~max(match(df_tme[names(which(row_split_tme == .x))], rev(tme_genes_order)))) %>% unlist())
+ra_tme = rowAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+# m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+# row_dend_tme = hclust(as.dist(1- cor(t(m[tme_genes,]^2), method='pearson')))
+# row_split = cutree(row_dend_tme , k = 10)
+# row_order = 
+
+m2  = t(adata$layers[['quantiles']])
+m2  = m2[, colnames(m)]
+m2  = t(apply(m2, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+m2[is.nan(m2)] <- 0
+ha_tme        = HeatmapAnnotation(df = rev(ha_df), col=ha_cols, show_legend=FALSE, gp = gpar(fontsize = 100), height = unit(1, "cm"), annotation_name_gp= gpar(fontsize = 2), annotation_height = unit(1, "cm"), simple_anno_size = unit(.1, "cm"))
+col_split = ifelse(col_split == 'Normal', 'Normal', 'Tumor')
+hm_tme = Heatmap(
+        m2[tme_genes,]^2, 
+        row_split=row_split_tme, 
+        column_split = factor(col_split, ordered=TRUE, levels=c('Tumor', 'Normal')),
+        # column_split = factor(abv_types[as.character(col_split)], ordered=TRUE, levels=abv_types), 
+        # row_km_repeats = 10000,
+        row_title_gp = gpar(fontsize = 0),
+        # row_order = names(sort(df_tme, decreasing=TRUE)),
+        column_dend_reorder = FALSE,
+        row_names_gp=gpar(fontsize = 7.5),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(.2, "mm"),
+        # cluster_columns = col_dend,
+        # cluster_row_slices = FALSE,
+        # clustering_distance_rows = 'spearman',
+        left_annotation = ra_tme,
+        cluster_column_slices=FALSE,
+        cluster_row_slices = FALSE,
+        # show_row_names =FALSE,
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        column_names_gp=gpar(fontsize = 0),
+        name="Scaled\nGene Expression",# column_title = region,  
+        column_title_gp = gpar(fontsize = 10), 
+        # cluster_row_slices = FALSE,
+        column_title_rot = 0,
+        col=grp_cols,
+        top_annotation =ha_tme,
+        # cluster_rows = as.dendrogram(row_dend_tme), 
+        height = unit(10, "cm"),
+        width = unit(15, "cm"),
+        row_names_centered = TRUE,
+        row_names_side = 'left',
+        # annotation_legend_param = list(title_position ='leftcenter-rot'),
+
+    )  #+ ra_tme 
+
+
+hm_all = (hm_tumor %v% hm_tme)
+
+
+pdf('output/hm_g2p_all_2024_04_03.pdf', width =20, height=20)
+draw(hm_all, padding = unit(c(20, 25, 10, 25), "mm"))#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tumor_only_2024_04_03.pdf', width =20, height=9)
+draw(hm_tumor, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tme_only_2024_04_03.pdf', width =15, height=9)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+    # cat('\n\n')
+
+ra_celltype = rowAnnotation(celltype=c(df_tumor, df_tme),col= list(celltype=celltype_cols_static[as.character(c(unique(df_tumor), unique(df_tme)))]), annotation_name_gp= gpar(fontsize = 0))
+grp_vals_cor     = seq(-1, 1, length.out=15)
+grp_cols_cor     = circlize::colorRamp2(grp_vals_cor, rev(colorspace::divergingx_hcl(15, palette='PiYG')))
+
+ha_tme = HeatmapAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+hm_cor = Heatmap(
+        cor(t(m[names(c(df_tumor)),]), t(m2[names(c(df_tme)),])), #), method='spearman'), 
+        # right_annotation = ra_tumor,
+        name="Pearson's \ncor. coefficient", #column_title = region,  
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        col=grp_cols_cor,
+        # clustering_method_rows = "single",
+        # clustering_method_columns = "single",
+        column_dend_reorder = FALSE,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        cluster_row_slices = FALSE,
+        cluster_column_slices = FALSE,
+        # bottom_annotation   = ha_tme,
+        # cluster_rows = row_dend_tumor,
+        # cluster_columns = rev(row_dend_tme),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(.2, "mm"),
+        row_split= row_split_tumor,
+        column_split=max(row_split_tme) - row_split_tme + 1,
+         column_title_gp = gpar(fontsize = 0, fontface = "bold"),
+         row_title_gp = gpar(fontsize = 0, fontface = "bold"),
+        width = unit(10, "cm"),
+        height= unit(10, "cm"),
+    )  #+ ra_tme
+
+hm_both = (hm_cor + hm_tumor ) 
+# draw(hm_both, auto_adjust = FALSE)
+pdf('output/hm_g2p_corr_genes_2024_04_03.pdf', width =18, height=10)
+draw(hm_both, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust = FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_tme_2024_03_06.pdf', width = 10, height = 12)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust=FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+```
+
+
+## Heatmaps Separated by sample
+
+```{r}
+q_high = 0.95
+q_low  = 0.25
+adata = anndata::read_h5ad('data_tidy/new_geno_nodule_2024_04_03.h5ad')
+# keys_6ROI = c('ML_III_A', 'ML_III_B', 'ML_II_A_1','ML_II_B', 'ML_II_C', 'ML_I_2')
+# adata = adata[adata$obs$sample %in% keys_6ROI,]
+
+pdf('output/hm_annots_per_sample_2024_04_03.pdf', width =15, height=10)
+
+for(s in unique(adata$obs$sample)){
+    adata_s = adata[adata$obs$sample == s, ]
+    adata_s$var$tme_tumor = ifelse(adata_s$var$tme != 'NaN', adata_s$var$tme, ifelse(adata_s$var$tumor != 'NaN', adata_s$var$tumor, 'NaN'))
+    tumor_core = adata_s$var_names[adata_s$var$tumor != 'add_on' & adata_s$var$tumor != 'NaN']
+    tme_core = adata_s$var_names[adata_s$var$tme != 'add_on' & adata_s$var$tme != 'NaN']
+    m  = t(adata_s[['X']])
+    # adata_s = adata_s[colSums(m) > quantile(colSums(m), 0.2),]
+    # m  = t(adata_s[['X']])
+    m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+    # m[is.nan(m)] <- 0
+
+    grp_vals     = seq(0, 1, length.out=20)
+    grp_cols     = circlize::colorRamp2(grp_vals, pals::ocean.thermal(20))
+    adata_s$obsm$plasmid_mask = adata_s$obsm$plasmid_mask[,plasmid_order]
+    plasmid_mask = rev(data.frame((adata_s$obsm$plasmid_mask)))
+    tumor_mask   = adata_s$obs[, intersect(colnames(adata_s$obs), setdiff(paste0(tumor_order, '_bin'), 'Unclassified_bin'))]
+    tme_mask   = adata_s$obs[, paste0(tme_order, '_bin')]
+    ha_df      = cbind(tumor_mask, tme_mask, plasmid_mask^10)
+    # ha_df      = cbind(plasmid_mask^10)
+    ha_cols = c(plasmid_cols, tumor_colors, tme_colors)
+    ha_tumor  = HeatmapAnnotation(
+            # df = rev(ha_df[colSums(m) != 0,]), 
+            df = rev(ha_df),
+            col=ha_cols, show_legend=TRUE, 
+            gp = gpar(fontsize = 100), 
+            # height = unit(5, "cm"), 
+            annotation_name_gp= gpar(fontsize = 5), 
+            # annotation_height = unit(5, "cm"), 
+            simple_anno_size = unit(.25, "cm"),         
+            annotation_legend_param = list(direction = "horizontal", at = c(0, 1), labels_gp = gpar(font=1), legend_width = unit(3, "cm"), title_position = "topcenter")
+        )
+
+
+
+    m = m[rownames(m) %in% adata_s$var_names[adata_s$var$tme_tumor != 'NaN'],]
+    m[is.nan(m)] <- 0
+    # m = m[,colSums(m) != 0 ]
+    split=factor(ifelse(adata_s$var[rownames(m),]['tme'] != 'NaN', 'TME', ifelse(adata_s$var[rownames(m),]['tumor'] != 'NaN', 'Tumor', 'add_on')), levels=c('Tumor', 'TME', 'add_on'))[rowSums(m) != 0]
+    m = m[rowSums(m) != 0, ]
+    col_dend = dendsort(hclust(dist(plasmid_mask[colnames(m),]^10)))
+    # row_dend = as.dendrogram(hclust(as.dist(1- cor(t(m[rownames(m) %in% tumor_core | rownames(m) %in% tme_core,]), method='spearman'))))
+
+
+    df_tumor = adata_s$var[adata_s$var$tumor != 'NaN',]['tumor']
+    tumor_genes = rownames(df_tumor)[rownames(df_tumor) %in% rownames(m)]
+    df_tumor = df_tumor[tumor_genes,]
+    names(df_tumor) = tumor_genes
+    df_tumor =  as.character(df_tumor)
+    names(df_tumor) = tumor_genes
+    row_dend_tumor = hclust(as.dist(1- cor(t(m[tumor_genes,]), method='pearson')))
+    row_split_tumor = cutree(row_dend_tumor, k= 6)
+    row_split_tumor = (max(row_split_tumor)+1) - row_split_tumor %>% map(~max(match(df_tumor[names(which(row_split_tumor == .x))], tumor_genes_order))) %>% unlist()
+    # max(match(df_tumor[names(which(row_split_tumor == 2))], tumor_order))
+    # tumor_core = names(df_tumor) = rownames(m)[rownames(m) %in% tumor_core]
+    # ra_tumor = Heatmap(df_tumor, name='signature', width = unit(0.5, "cm"), column_names_gp=gpar(fontsize = 0), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols, show_row_names =TRUE)
+    ra_tumor = rowAnnotation(Tumor=df_tumor,col= list(Tumor=celltype_cols_static[as.character(unique(df_tumor))]), annotation_name_gp= gpar(fontsize = 0))
+    set.seed(1375)
+    # column_order = order(factor(adata_s[colnames(m),]$obs[,'dom_type'], ordered=TRUE, levels = c(tumor_order, 'add_on')))
+    # col_split =  factor(adata_s[colnames(m),]$obs[,'dom_tumor'], ordered=TRUE, levels = rev(tumor_order))
+    hm_tumor = Heatmap(
+            m[tumor_genes,]^2, 
+            cluster_columns = col_dend,
+            # row_split=row_split_tumor, 
+            # column_split = factor(abv_types[as.character(col_split)], ordered=TRUE, levels=rev(abv_types)), 
+            # row_order = names(sort(df_tumor, decreasing=FALSE)),
+            # column_order = column_order,
+            row_title_gp = gpar(fontsize = 0),
+            # row_dend_reorder = FALSE,
+            row_names_gp=gpar(fontsize = 7.5),
+            row_gap = unit(.2, "mm"),
+            column_gap = unit(.2, "mm"),
+            left_annotation = ra_tumor,
+            # cluster_row_slices = FALSE,
+            # cluster_columns = col_dend,
+            # cluster_row_slices = FALSE,
+            cluster_column_slices = FALSE,
+            # clustering_distance_rows = 'spearman',
+            # show_row_names =FALSE,
+            # show_column_dend = FALSE,
+            column_names_side='top',
+            row_names_side = 'left',
+            column_names_gp=gpar(fontsize = 5),
+            name="Scaled\nGene Expression", #column_title = region,  
+            # column_title_gp = gpar(fontsize = 7.5, rot=0), 
+            # column_title_rot = 0,
+            top_annotation =ha_tumor, col=grp_cols,
+            cluster_row_slices = FALSE,
+            show_column_dend = FALSE,
+            show_row_dend = FALSE,
+            width = unit(15, "cm"),
+            height= unit(10, "cm"),
+            row_names_centered = TRUE,
+            column_title=s,
+            column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+
+            
+        )  # + ra_tumor
+        draw(hm_tumor, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, show_heatmap_legend = FALSE) 
+
+}
+
+dev.off()
+
+# lgd_tumor = Legend(labels = setdiff(unique(adata$var$tumor), c('NaN', 'add_on')), title = "TME", legend_gp = gpar(col = celltype_cols_static),
+#     title_position = "leftcenter-rot")
+
+df_tme = adata$var[adata$var$tme != 'NaN',]['tme']
+tme_genes = rownames(df_tme)[rownames(df_tme) %in% rownames(m)]
+tme_genes = setdiff(tme_genes, 'Postn')
+df_tme = df_tme[tme_genes,]
+names(df_tme) = tme_genes
+# tme_core = names(df_tme) = rownames(m)[rownames(m) %in% tme_core]
+# ra_tme = Heatmap(df_tme, name='signature', width = unit(0.5, "cm"), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols_static, show_row_names =TRUE)
+set.seed(1375)
+row_dend_tme = hclust(as.dist(1- cor(t(m[tme_genes,]), method='pearson')))
+row_split_tme = cutree(row_dend_tme, k= 10)
+row_split_tme = (max(row_split_tme)+1) - (row_split_tme %>% map(~max(match(df_tme[names(which(row_split_tme == .x))], rev(tme_genes_order)))) %>% unlist())
+ra_tme = rowAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+# m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+# row_dend_tme = hclust(as.dist(1- cor(t(m[tme_genes,]^2), method='pearson')))
+# row_split = cutree(row_dend_tme , k = 10)
+# row_order = 
+
+m2  = t(adata$layers[['quantiles']])
+m2  = m2[, colnames(m)]
+m2  = t(apply(m2, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+m2[is.nan(m2)] <- 0
+ha_tme        = HeatmapAnnotation(df = rev(ha_df), col=ha_cols, show_legend=FALSE, gp = gpar(fontsize = 100), height = unit(1, "cm"), annotation_name_gp= gpar(fontsize = 2), annotation_height = unit(1, "cm"), simple_anno_size = unit(.1, "cm"))
+col_split = ifelse(col_split == 'Normal', 'Normal', 'Tumor')
+hm_tme = Heatmap(
+        m2[tme_genes,]^2, 
+        row_split=row_split_tme, 
+        column_split = factor(col_split, ordered=TRUE, levels=c('Tumor', 'Normal')),
+        # column_split = factor(abv_types[as.character(col_split)], ordered=TRUE, levels=abv_types), 
+        # row_km_repeats = 10000,
+        row_title_gp = gpar(fontsize = 0),
+        # row_order = names(sort(df_tme, decreasing=TRUE)),
+        column_dend_reorder = FALSE,
+        row_names_gp=gpar(fontsize = 7.5),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(.2, "mm"),
+        # cluster_columns = col_dend,
+        # cluster_row_slices = FALSE,
+        # clustering_distance_rows = 'spearman',
+        left_annotation = ra_tme,
+        cluster_column_slices=FALSE,
+        cluster_row_slices = FALSE,
+        # show_row_names =FALSE,
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        column_names_gp=gpar(fontsize = 0),
+        name="Scaled\nGene Expression",# column_title = region,  
+        column_title_gp = gpar(fontsize = 10), 
+        # cluster_row_slices = FALSE,
+        column_title_rot = 0,
+        col=grp_cols,
+        top_annotation =ha_tme,
+        # cluster_rows = as.dendrogram(row_dend_tme), 
+        height = unit(10, "cm"),
+        width = unit(15, "cm"),
+        row_names_centered = TRUE,
+        row_names_side = 'left'
+        annotation_legend_param = list(title_position ='leftcenter-rot'),
+
+    )  #+ ra_tme 
+
+
+hm_all = (hm_tumor %v% hm_tme)
+
+
+pdf('output/test.pdf', width =20, height=20)
+draw(hm_tumor, padding = unit(c(20, 25, 10, 25), "mm"))#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tumor_only_2024_02_22.pdf', width =20, height=9)
+draw(hm_tumor, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tme_only_2024_02_22.pdf', width =20, height=9)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+    # cat('\n\n')
+
+ra_celltype = rowAnnotation(celltype=c(df_tumor, df_tme),col= list(celltype=celltype_cols_static[as.character(c(unique(df_tumor), unique(df_tme)))]), annotation_name_gp= gpar(fontsize = 0))
+grp_vals_cor     = seq(-1, 1, length.out=15)
+grp_cols_cor     = circlize::colorRamp2(grp_vals_cor, pals::ocean.curl(15))
+
+ha_tme = HeatmapAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+hm_cor = Heatmap(
+        cor(t(m[names(c(df_tumor)),]), t(m2[names(c(df_tme)),])), #), method='spearman'), 
+        # right_annotation = ra_tumor,
+        name="Pearson's \ncor. coefficient", #column_title = region,  
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        col=grp_cols_cor,
+        # clustering_method_rows = "single",
+        # clustering_method_columns = "single",
+        column_dend_reorder = FALSE,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        cluster_row_slices = FALSE,
+        cluster_column_slices = FALSE,
+        # bottom_annotation   = ha_tme,
+        # cluster_rows = row_dend_tumor,
+        # cluster_columns = rev(row_dend_tme),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(.2, "mm"),
+        row_split= row_split_tumor,
+        column_split=max(row_split_tme) - row_split_tme + 1,
+         column_title_gp = gpar(fontsize = 0, fontface = "bold"),
+         row_title_gp = gpar(fontsize = 0, fontface = "bold"),
+        width = unit(10, "cm"),
+        height= unit(10, "cm"),
+    )  #+ ra_tme
+
+hm_both = (hm_cor + hm_tumor ) 
+# draw(hm_both, auto_adjust = FALSE)
+pdf('output/hm_g2p_corr_genes_2024_03_06.pdf', width =18, height=10)
+draw(hm_both, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust = FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_tme_2024_03_06.pdf', width = 10, height = 12)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust=FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+```
+
+
+
+## Global heatmaps all samples
+
+```{r}
+q_high = 0.95
+q_low  = 0.25
+adata = anndata::read_h5ad('data_tidy/new_geno_nodule_2024_04_03.h5ad')
+# keys_6ROI = c('ML_III_A', 'ML_III_B', 'ML_II_A_1','ML_II_B', 'ML_II_C', 'ML_I_2')
+# adata = adata[adata$obs$sample %in% keys_6ROI,]
+adata$var$tme_tumor = ifelse(adata$var$tme != 'NaN', adata$var$tme, ifelse(adata$var$tumor != 'NaN', adata$var$tumor, 'NaN'))
+tumor_core = adata$var_names[adata$var$tumor != 'add_on' & adata$var$tumor != 'NaN']
+tme_core = adata$var_names[adata$var$tme != 'add_on' & adata$var$tme != 'NaN']
+m  = t(adata[['X']])
+adata = adata[colSums(m) > quantile(colSums(m), 0.2),]
+m  = t(adata[['X']])
+m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+m[is.nan(m)] <- 0
+
+grp_vals     = seq(0, 1, length.out=20)
+grp_cols     = circlize::colorRamp2(grp_vals, pals::ocean.thermal(20))
+plasmid_mask = rev(data.frame((adata$obsm$plasmid_mask)))
+# tumor_mask   = adata$obs[, setdiff(paste0(tumor_order, '_bin'), 'Unclassified_bin')]
+tumor_mask   = adata$obs[, intersect(paste0(tumor_order, '_bin'), colnames(adata$obs))]
+tme_mask   = adata$obs[, paste0(tme_order, '_bin')]
+ha_df      = cbind(plasmid_mask^10, tumor_mask, tme_mask)
+# ha_df      = cbind(plasmid_mask^10)
+ha_cols = c(plasmid_cols, tumor_colors, tme_colors)
+ha_tumor         = HeatmapAnnotation(df = ha_df[colSums(m) != 0,], col=ha_cols, show_legend=FALSE, gp = gpar(fontsize = 100), height = unit(5, "cm"), annotation_name_gp= gpar(fontsize = 7.5), annotation_height = unit(5, "cm"), simple_anno_size = unit(.25, "cm"))
+ha_tme         = HeatmapAnnotation(df = rev(ha_df[colSums(m) != 0,]), col=ha_cols, show_legend=FALSE, gp = gpar(fontsize = 100), height = unit(5, "cm"), annotation_name_gp= gpar(fontsize = 7.5), annotation_height = unit(5, "cm"), simple_anno_size = unit(.25, "cm"))
+
+m = m[rownames(m) %in% adata$var_names[adata$var$tme_tumor != 'NaN'],]
+m[is.nan(m)] <- 0
+m = m[,colSums(m) != 0 ]
+split=factor(ifelse(adata$var[rownames(m),]['tme'] != 'NaN', 'TME', ifelse(adata$var[rownames(m),]['tumor'] != 'NaN', 'Tumor', 'add_on')), levels=c('Tumor', 'TME', 'add_on'))[rowSums(m) != 0]
+m = m[rowSums(m) != 0, ]
+# col_dend = dendsort(hclust(dist(plasmid_mask[colnames(m),]^5)))
+# row_dend = as.dendrogram(hclust(as.dist(1- cor(t(m[rownames(m) %in% tumor_core | rownames(m) %in% tme_core,]), method='spearman'))))
+
+
+df_tumor = adata$var[adata$var$tumor != 'NaN',]['tumor']
+tumor_genes = rownames(df_tumor)[rownames(df_tumor) %in% rownames(m)]
+tumor_genes = setdiff(tumor_genes, 'Vil1')
+df_tumor = df_tumor[tumor_genes,]
+names(df_tumor) = tumor_genes
+row_dend_tumor = hclust(as.dist(1- cor(t(m[tumor_genes,]), method='pearson')))
+row_split_tumor = cutree(row_dend_tumor, k= 6)
+row_split_tumor = (max(row_split_tumor)+1) - row_split_tumor %>% map(~max(match(df_tumor[names(which(row_split_tumor == .x))], tumor_genes_order))) %>% unlist()
+# tumor_core = names(df_tumor) = rownames(m)[rownames(m) %in% tumor_core]
+# ra_tumor = Heatmap(df_tumor, name='signature', width = unit(0.5, "cm"), column_names_gp=gpar(fontsize = 0), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols, show_row_names =TRUE)
+ra_tumor = rowAnnotation(Tumor=df_tumor,col= list(Tumor=celltype_cols_static[as.character(unique(df_tumor))]), annotation_name_gp= gpar(fontsize = 0))
+set.seed(1375)
+# column_order = order(factor(adata[colnames(m),]$obs[,'dom_type'], ordered=TRUE, levels = c(tumor_order, 'add_on')))
+# col_split =  factor(adata[colnames(m),]$obs[,'dom_tumor'], ordered=TRUE, levels = tumor_order)
+col_split =  factor(adata[colnames(m),]$obs[,'dom_tumor'], ordered=TRUE, levels = tumor_order)
+col_split = ifelse(col_split == 'Normal', 'Normal', 'Tumor')
+hm_tumor = Heatmap(
+        m[tumor_genes,]^2, 
+        cluster_rows = row_dend_tumor,
+        # row_split=6, 
+        # row_split=row_split_tumor, 
+        column_split = col_split,
+        # row_order = names(sort(df_tumor, decreasing=FALSE)),
+        # column_order = column_order,
+        row_title_gp = gpar(fontsize = 0),
+        # row_dend_reorder = FALSE,
+        row_names_gp=gpar(fontsize = 7.5),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(5, "mm"),
+        left_annotation = ra_tumor,
+        # cluster_row_slices = FALSE,
+        # cluster_columns = col_dend,
+        # cluster_row_slices = FALSE,
+        cluster_column_slices = FALSE,
+        # clustering_distance_rows = 'spearman',
+        # show_row_names =FALSE,
+        # show_column_dend = FALSE,
+        column_names_side='top',
+        row_names_side = 'left',
+        column_names_gp=gpar(fontsize = 3),
+        name="Scaled\nGene Expression", #column_title = region,  
+        # column_title_gp = gpar(fontsize = 7.5, rot=0), 
+        # column_title_rot = 0,
+        top_annotation =ha_tumor, col=grp_cols,
+        cluster_row_slices = FALSE,
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        width = unit(50, "cm"),
+        height= unit(8, "cm"),
+        row_names_centered = TRUE,
+        column_title='',
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+
+        
+        )  # + ra_tumor
+
+# lgd_tumor = Legend(labels = setdiff(unique(adata$var$tumor), c('NaN', 'add_on')), title = "TME", legend_gp = gpar(col = celltype_cols_static),
+#     title_position = "leftcenter-rot")
+
+df_tme = adata$var[adata$var$tme != 'NaN',]['tme']
+tme_genes = rownames(df_tme)[rownames(df_tme) %in% rownames(m)]
+tme_genes = setdiff(tme_genes, 'Postn')
+df_tme = df_tme[tme_genes,]
+names(df_tme) = tme_genes
+# tme_core = names(df_tme) = rownames(m)[rownames(m) %in% tme_core]
+# ra_tme = Heatmap(df_tme, name='signature', width = unit(0.5, "cm"), row_names_gp=gpar(fontsize = 7.5), col= celltype_cols_static, show_row_names =TRUE)
+ra_tme = rowAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+set.seed(1375)
+# m  = t(apply(m, 1, function(x) ifelse(x > quantile(x, q_high), 1, ifelse(x < quantile(x, q_low), 0, (x - quantile(x, q_low)) / (quantile(x, q_high) - quantile(x, 0.25))))))
+row_dend_tme = hclust(as.dist(1- cor(t(m[tme_genes,]^2), method='pearson')))
+row_split = cutree(row_dend_tme , k = 9)
+# row_order = 
+hm_tme = Heatmap(
+        m[tme_genes,]^2, 
+        # row_split=7, 
+        # column_split = col_split,
+        # row_km_repeats = 10000,
+        row_title_gp = gpar(fontsize = 0),
+        # row_order = names(sort(df_tme, decreasing=TRUE)),
+        column_dend_reorder = TRUE,
+        row_names_gp=gpar(fontsize = 7.5),
+        row_gap = unit(.2, "mm"),
+        column_gap = unit(5, "mm"),
+        # cluster_columns = col_dend,
+        # cluster_row_slices = FALSE,
+        cluster_column_slices = FALSE,
+        clustering_distance_rows = 'spearman',
+        left_annotation = ra_tme,
+        row_names_side = 'left',
+        # show_row_names =FALSE,
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        column_names_gp=gpar(fontsize = 0),
+        name="Scaled\nGene Expression",# column_title = region,  
+        column_title_gp = gpar(fontsize = 7.5, fontface = "bold"), 
+        # cluster_row_slices = FALSE,
+        column_title_rot = 45,
+        col=grp_cols,
+        # top_annotation =ha_tme,
+        cluster_rows = as.dendrogram(row_dend_tme),
+        height = unit(8, "cm"),
+        width = unit(50, "cm"),
+        row_names_centered = TRUE,
+
+    )  #+ ra_tme 
+
+
+hm_all = (hm_tumor %v% hm_tme)
+
+
+pdf('output/hm_g2p_all_noduels_2024_04_03.pdf', width =25, height=22)
+draw(hm_all, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tumor_only_2024_02_22.pdf', width =20, height=9)
+draw(hm_tumor, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_total_nodules_local_tme_only_2024_02_22.pdf', width =20, height=9)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+    # cat('\n\n')
+
+ra_celltype = rowAnnotation(celltype=c(df_tumor, df_tme),col= list(celltype=celltype_cols_static[as.character(c(unique(df_tumor), unique(df_tme)))]), annotation_name_gp= gpar(fontsize = 0))
+grp_vals_cor     = seq(-1, 1, length.out=15)
+grp_cols_cor     = circlize::colorRamp2(grp_vals_cor, pals::ocean.curl(15))
+
+ha_tme = HeatmapAnnotation(TME=df_tme,col= list(TME=celltype_cols_static[as.character(unique(df_tme))]), annotation_name_gp= gpar(fontsize = 0))
+hm_cor = Heatmap(
+        cor(t(m[names(c(df_tumor)),]), t(m[names(c(df_tme)),])), #), method='spearman'), 
+        # right_annotation = ra_tumor,
+        name="Pearson's \ncor. coefficient", #column_title = region,  
+        show_column_dend = FALSE,
+        show_row_dend = FALSE,
+        col=grp_cols_cor,
+        # clustering_method_rows = "single",
+        cluster_rows = as.dendrogram(row_dend_tumor),
+        # clustering_method_columns = "single",
+        column_dend_reorder = FALSE,
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        # bottom_annotation   = ha_tme,
+        cluster_columns = rev(as.dendrogram(row_dend_tme)),
+        row_split= 6,
+        column_split=7,
+         column_title_gp = gpar(fontsize = 0, fontface = "bold"),
+         row_title_gp = gpar(fontsize = 0, fontface = "bold"),
+        width = unit(10, "cm"),
+        height= unit(10, "cm"),
+    )  #+ ra_tme
+
+hm_both = (hm_cor + hm_tumor ) 
+# draw(hm_both, auto_adjust = FALSE)
+pdf('output/hm_g2p_corr_genes_2024_02_28.pdf', width =18, height=10)
+draw(hm_both, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust = FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+pdf('output/hm_g2p_tme_2024_02_28.pdf', width = 10, height = 12)
+draw(hm_tme, padding = unit(c(20, 25, 10, 25), "mm"), merge_legend = TRUE, auto_adjust=FALSE)#, show_heatmap_legend = FALSE) 
+
+dev.off()
+
+
+
+```
