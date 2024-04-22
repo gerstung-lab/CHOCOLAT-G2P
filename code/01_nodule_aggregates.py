@@ -158,11 +158,11 @@ for sample in all_rois:
     inside_scores    = np.array(adata.obsm['nodules_inside'].loc[:,nodules])
     # closure_scores      = np.array(adata.obsm['nodules_closure'].loc[:,nodules])
     # inside_scores    = inside_scores + closure_scores
-    z_scores         = np.log(calculate_means(inside_scores, adata.X.toarray()) + 1)
+    z_scores         = calculate_means(inside_scores, adata.X.toarray())
     geno_inside_exp  = pd.DataFrame(z_scores, index=nodules)
     plasmid_mask = plasmid_mask.loc[nodules,:]
     geno_pheno_adata = sc.AnnData(geno_inside_exp, obsm={'plasmid_mask': plasmid_mask}, var=adata[:,genes].var, varm={'sig_mask': sig_mask.loc[genes,:]})
-    z_scores         = np.log(calculate_quantiles(inside_scores, adata.X.toarray()) + 1)
+    z_scores         = calculate_quantiles(inside_scores, adata.X.toarray())
     geno_pheno_adata.layers['quantiles'] = z_scores
     geno_pheno_adata.var['sig'] = 'NaN'
     geno_pheno_adata.var.loc[sig_genes,'sig'] = geno_pheno_adata.varm['sig_mask'].loc[sig_genes,:].idxmax(1).values
