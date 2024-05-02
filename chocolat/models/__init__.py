@@ -1,1 +1,1 @@
-from ._genotype_model import ModelGenotyping, GuideGenotyping, train_genotype_models
+from ._genotype_model import ModelGenotyping, GuideGenotyping, train_genotype_models, prepare_data4genotype_models

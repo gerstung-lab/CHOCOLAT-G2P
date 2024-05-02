@@ -108,7 +108,32 @@ class GuideGenotyping(PyroModule):
         region_params = pyro.sample('region_params', dist.Dirichlet(alpha).to_event(2))
         
         
-def train_genotype_models(adata_dict, reporters, plasmid_matrix,
+def prepare_data4genotype_models(adata_dict, reporters, plasmid_matrix,
+                          region_id_column='histo_annotation_num', 
+                          keys=None,
+                          device='cuda'):
+    
+    if (device =='cuda') and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    if keys is None:
+        keys = list(adata_dict.keys())
+                
+    plasmid_matrix_tensor = torch.tensor(plasmid_matrix, device=device)
+    print(f'Prepared data for the following samples: \n{", ".join(keys)}')
+    
+    data = {k: torch.tensor(v[:,reporters].X.todense(), device=device) for k, v in adata_dict.items()}
+    umi = {k: torch.tensor(v.X.sum(1), device=device) for k, v in adata_dict.items()}
+
+    # Spot to region ids
+    region_ids = {k: v.obs[region_id_column].astype('object').fillna('NaN').astype('category').cat.codes for k, v in adata_dict.items()}
+    region_ids_tensor = {k: torch.tensor(v.values.astype(int), device=device) for k, v in region_ids.items()}
+    
+    return data, umi, region_ids_tensor, plasmid_matrix_tensor
+
+        
+def train_genotype_models(data, umi, region_ids_tensor, plasmid_matrix_tensor,
                           max_range=6,
                           num_iters=10000,
                           lr=0.01,
@@ -126,24 +151,12 @@ def train_genotype_models(adata_dict, reporters, plasmid_matrix,
         device = torch.device('cpu')
     
     if keys is None:
-        keys = list(adata_dict.keys())
+        keys = list(data.keys())
         
     if return_sites is None:
         return_sites=("region_params", "r_0", "epsilon",
                       "spot_sensitivity", "r_ad", "obs", "phi")
         
-    plasmid_matrix_tensor = torch.tensor(plasmid_matrix, device=device)
-    print(f'Preparing data for the following samples: {", ".join(keys)}')
-    
-    data = {k: torch.tensor(v[:,reporters].X.todense(), device=device) for k, v in adata_dict.items()}
-    umi = {k: torch.tensor(v.X.sum(1), device=device) for k, v in adata_dict.items()}
-
-    # Spot to region ids
-    region_ids = {k: v.obs['histo_annotation_num'].astype('object').fillna('NaN').astype('category').cat.codes for k, v in adata_dict.items()}
-    region_ids_tensor = {k: torch.tensor(v.values.astype(int), device=device) for k, v in region_ids.items()}
-    regions_labels2use = {k: [adata_dict[k].obs['histo_annotation_num'][v == x].unique()[0]
-                              for x in range(len(adata_dict[k].obs['histo_annotation_num'].cat.categories))] for k, v in region_ids.items()}
-    
     # Initialize an empty dictionary to store model, guide, optimizer, and svi for each sample
     models = {}
     guides = {}
@@ -163,7 +176,7 @@ def train_genotype_models(adata_dict, reporters, plasmid_matrix,
                                                loss=pyro.infer.Trace_ELBO(num_particles=3))
 
     # Run inference separately for each sample
-    loss_lists = {sample_name: [] for sample_name in adata_dict.keys()}
+    loss_lists = {sample_name: [] for sample_name in keys}
     num_iterations = num_iters
     
     torch.manual_seed(seed)
