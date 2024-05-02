@@ -1,1 +1,1 @@
-from ._plots import plot_annotations
+from ._plots import plot_annotations, plot_spatial_pertrubation_probabilities
