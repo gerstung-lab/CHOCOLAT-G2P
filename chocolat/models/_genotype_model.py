@@ -12,6 +12,60 @@ from tqdm import tqdm
 
 
 class ModelGenotyping(PyroModule):
+    """
+    A Pyro probabilistic model class for genotyping cancer regions based on spatial transcriptomics data,
+    modelling perturbation probabilities from barcode counts.
+
+    Parameters
+    ----------
+    plasmid_matrix : torch.Tensor
+        A matrix linking plasmids to barcodes used in the experiment.
+    region_ids : torch.Tensor
+        Tensor containing region identifiers for each spot in the dataset.
+    data_shape : tuple of int
+        Shape of the data matrix (visium spots, barcodes).
+    max_range : int, optional
+        The maximum number of copies of a plasmid per clone, to account for dosage-dependent variation. 
+        Default is 6.
+
+    Attributes
+    ----------
+    device : torch.device
+        The computation device (CUDA or CPU) determined based on availability.
+    n_regions : int
+        Number of unique regions based on `region_ids`.
+    cn_range : torch.Tensor
+        Range tensor from 0 to `max_range` - 1.
+    noise : torch.Tensor
+        A tensor representing a fixed probability of no perturbation presence in normal tissue regions.
+    data_shape : tuple of int
+        Shape of the data (spots, barcodes), defining the dimensions for modeling.
+
+    Methods
+    -------
+    forward(data, total_counts, mask=None)
+        Defines the generative process for the observed data given the model parameters, estimating
+        the spot sensitivity, barcode expression rates, and region-specific perturbation counts.
+        Requires data tensor dim=(spots, barcodes) and total UMI counts per spot dim=(spots, 1)
+        
+    Notes
+    -----
+    Bayesian modeling of perturbation probabilities from barcode counts:
+    The observed expression count matrix D_{s,b} (spots s by barcode genes b) is assumed to follow
+    a Negative Binomial distribution with mean λ_{s,b} and overdispersion ϕ_{b}. The overdispersion 
+    parameter ϕ is sampled from a Gamma distribution (shape=1000, rate=0.03), skewed towards higher 
+    values to encourage the likelihood to approximate a Poisson distribution in the absence of 
+    overdispersion evidence. The mean expression for each spot, λ_{s,b}, incorporates sensitivity of
+    each spot, mappings of spots to clonal nodules, expected number of integrated copies of plasmid,
+    linkage of plasmids to their corresponding barcodes, and barcode-specific expression rates and 
+    noise:
+    
+    $$\lambda_{s,g} = \mu_{s} \sum_{r} A_{s,r} \sum_{g}G_{r,g} B_{g,b} k_{b} + \xi_{b}$$
+
+    The per-nodule plasmid integration number, modeled as an expected count of integration events, 
+    describes the probability distribution over the number of plasmid copies integrated per clone,
+    assuming up to `max_range` copies.
+    """
     def __init__(self, plasmid_matrix, region_ids, data_shape, max_range=6):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -69,6 +123,47 @@ class ModelGenotyping(PyroModule):
             
 
 class GuideGenotyping(PyroModule):
+    """
+    A Pyro variational guide for the `ModelGenotyping` class, specifying the variational distributions
+    for the model's parameters. This guide is designed to approximate the posterior distribution 
+    of the genotyping model using parameterized variational distributions.
+
+    Parameters
+    ----------
+    plasmid_matrix : torch.Tensor
+        A matrix linking plasmids to barcodes used in the experiment.
+    region_ids : torch.Tensor
+        Tensor containing region identifiers for each spot in the dataset.
+    data_shape : tuple of int
+        Shape of the data matrix (spots, barcodes).
+    max_range : int, optional
+        The maximum number of copies of a plasmid per clone, used for constructing Dirichlet 
+        priors for region-specific plasmid copy number. Default is 6.
+
+    Attributes
+    ----------
+    device : torch.device
+        The computation device (CUDA or CPU) determined based on availability.
+    n_regions : int
+        Number of unique regions based on `region_ids`.
+    cn_range : torch.Tensor
+        Range tensor from 0 to `max_range` - 1.
+    data_shape : tuple of int
+        Shape of the data (spots, barcodes), defining the dimensions for variational parameters.
+
+    Methods
+    -------
+    forward(data, total_counts, mask=None)
+        Executes the variational guide, sampling from variational distributions and registering
+        variational parameters with Pyro's parameter store.
+        
+    Notes
+    -----
+    This guide provides variational families for parameters like spot sensitivity (λ), overdispersion (ϕ),
+    and region-specific plasmid copy numbers. It uses LogNormal distributions for positive constrained 
+    parameters like spot sensitivity, and Dirichlet distributions for multinomial proportions in region
+    parameters. 
+    """
     def __init__(self, plasmid_matrix, region_ids, data_shape, max_range=6):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -112,6 +207,38 @@ def prepare_data4genotype_models(adata_dict, reporters, plasmid_matrix,
                           region_id_column='histo_annotation_num', 
                           keys=None,
                           device='cuda'):
+    """
+    Prepares and transforms data from AnnData objects for use with genotyping models, 
+    transferring the necessary data to the specified computational device.
+
+    Parameters
+    ----------
+    adata_dict : dict of AnnData
+        A dictionary of AnnData objects, each containing gene expression data and metadata 
+        for CHOCOLAT-G2P 10x Visium expreiments.
+    reporters : list of str
+        List of gene names that serve as reporters in the plasmid_matrix.
+    plasmid_matrix : numpy.ndarray
+        A matrix linking plasmids to barcodes or reporters used in the experiment.
+    region_id_column : str, optional
+        The column name in `adata.obs` that contains region identifiers. 
+        Default is 'histo_annotation_num'.
+    keys : list of str, optional
+        A list of keys specifying which samples in `adata_dict` to process. If None, 
+        all samples in `adata_dict` will be processed.
+    device : str, optional
+        The device to which tensors will be transferred ('cuda' or 'cpu'). If 'cuda' is 
+        specified and available, tensors will be moved to GPU. Default is 'cuda'.
+
+    Returns
+    -------
+    tuple
+        Returns a tuple containing four elements:
+        - data: A dictionary mapping each key to a tensor of expression data for reporter genes.
+        - umi: A dictionary mapping each key to a tensor of UMI counts (total counts per spot).
+        - region_ids_tensor: A dictionary mapping each key to a tensor of encoded region IDs.
+        - plasmid_matrix_tensor: A tensor representing the plasmid_matrix transferred to the specified device.
+    """
     
     if (device =='cuda') and torch.cuda.is_available():
         device = torch.device('cuda')
@@ -137,14 +264,54 @@ def train_genotype_models(data, umi, region_ids_tensor, plasmid_matrix_tensor,
                           max_range=6,
                           num_iters=10000,
                           lr=0.01,
-                          region_id_column='histo_annotation_num', 
                           keys=None, 
                           save_filename=None, 
                           return_sites=None,
                           num_samples=1000,
                           seed=42,
                           device='cuda'):
+    """
+    Trains genotype models for each sample specified with variational inference.
     
+    Parameters
+    ----------
+    data : dict
+        A dictionary mapping sample keys to their respective expression data tensors.
+    umi : dict
+        A dictionary mapping sample keys to their respective UMI count tensors.
+    region_ids_tensor : dict
+        A dictionary mapping sample keys to tensors of encoded region IDs.
+    plasmid_matrix_tensor : torch.Tensor
+        A tensor representing the plasmid matrix, used in both the model and guide.
+    max_range : int, optional
+        The maximum number of plasmid copy numbers per region. Default is 6.
+    num_iters : int, optional
+        Number of iterations to run the stochastic variational inference. Default is 10000.
+    lr : float, optional
+        Learning rate for the Adam optimizer. Default is 0.01.
+    keys : list of str, optional
+        List of sample keys to process. If None, processes all keys in `data`.
+    save_filename : str, optional
+        Filename to save the posterior samples as a numpy file. If None, posteriors are not saved.
+    return_sites : tuple of str, optional
+        Specifies the model sites from which to return posterior samples. Default includes all main sites.
+    num_samples : int, optional
+        Number of posterior samples to generate after training. Default is 1000.
+    seed : int, optional
+        Random seed for reproducibility. Default is 42.
+    device : str, optional
+        Specifies whether to use 'cuda' or 'cpu'. If 'cuda' is available, it will be used by default.
+
+    Returns
+    -------
+    tuple
+        Returns a tuple containing dictionaries for models, guides, optimizers, SVI objects, and samples:
+        - models: The trained Pyro models.
+        - guides: The corresponding variational guides.
+        - optimizers: The Adam optimizers used during training.
+        - svi_dict: The SVI objects configured for inference.
+        - samples_dict: Posterior samples from the trained models (this dict is saved, if filename is specified).
+    """
     if (device =='cuda') and torch.cuda.is_available():
         device = torch.device('cuda')
     else:
