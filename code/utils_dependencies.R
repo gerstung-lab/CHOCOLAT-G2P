@@ -42,11 +42,11 @@ import_cran('devtools')
 cran_packages = c('gRim', 'glasso', 'methods', 'Matrix',
   'igraph', 'graph', 'data.table', 'visNetwork',
   'Rtsne', 'RColorBrewer', 'doParallel', 'reshape2', 'qgraph',
-  'magrittr', 'uwot', 'scales', 'patchwork')
+  'magrittr', 'uwot', 'scales', 'patchwork', 'dendsort')
 
 bioc_packages = c('genefilter', 'limma', 'BiocParallel',
   'gRbase', 'RBGL', 'Rgraphviz', 'gRain',
-  'scran', 'Seurat', 'SpatialExperiment')
+  'scran', 'Seurat', 'SpatialExperiment', 'zellkonverter', 'ComplexHeatmap')
 
 git_packages  = c('ropenscilabs/umapr')
 

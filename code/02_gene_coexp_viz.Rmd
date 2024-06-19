@@ -25,15 +25,12 @@ knitr::opts_knit$set( root.dir='..' )
 # wflow_build(files='analysis/00_initial_eda.Rmd', view=F, verbose=T, delete_cache=T)
 ```
 
-```{r setup_libs, collapse=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
-suppressMessages(source('code/R/dep.R')) 
-```
-
 ## Helper functions
 
 ```{r setup_helpers, message=FALSE, cache=TRUE}
-suppressMessages(source('code/R/utils.R')) 
-suppressMessages(source('code/R/analysis_constants.R')) 
+suppressMessages(source('utils_dependencies.R')) 
+suppressMessages(source('utils_funcitons.R')) 
+# suppressMessages(source('code/R/analysis_constants.R')) 
 library("spatialLIBD")
 # source('code/R/sma01_eda.R')
 ```

@@ -26,18 +26,14 @@ knitr::opts_knit$set( root.dir='..' )
 ```
 
 ```{r setup_libs, collapse=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
-suppressMessages(source('code/R/dep.R')) 
+
 ```
 
 ## Helper functions
 
 ```{r setup_helpers, message=FALSE, cache=TRUE}
-# suppressMessages(source('code/R/utils.R')) 
-# suppressMessages(source('code/R/analysis_constants.R')) 
-# library("spatialLIBD")
-
-suppressMessages(source('code/R/utils.R')) 
-suppressMessages(source('code/R/analysis_constants.R')) 
+suppressMessages(source('code/utils_dependencies.R')) 
+suppressMessages(source('code/utils_funcitons.R')) 
 library("spatialLIBD")
 library(anndata)
 library(viridis)
