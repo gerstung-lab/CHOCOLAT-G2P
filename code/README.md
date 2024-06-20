@@ -12,5 +12,5 @@
 |                                  |                                                  |                                  |   - Generates factor to cell type signature map                          |
 | 05_phenotype_spatial_maps.py | - AnnData object containing expression aggregates and binarization (#04) | - Plot (Fig. 3, EDF 14) | - Generates spatial maps of aggregates and single gene expressions      |
 |                               | - AnnData object containing factors (#06)       |                                  |                                                                          |
-| utils_functions.py           |                                                  |                                  | - Auxiliary functions used for R scripts                                 |
-| utils_dependencies.py        |                                                  |                                  | - Packages used for R scripts                                             |
+| utils_functions.R           |                                                  |                                  | - Auxiliary functions used for R scripts                                 |
+| utils_dependencies.R        |                                                  |                                  | - Packages used for R scripts                                             |
