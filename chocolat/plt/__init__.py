@@ -1,1 +1,1 @@
-from ._plots import plot_annotations, plot_spatial_pertrubation_probabilities
+from ._plots import plot_annotations, plot_spatial_pertrubation_probabilities, plot_spatial_barcodes_average, plot_average_barcode_expression

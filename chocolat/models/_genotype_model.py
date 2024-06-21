@@ -60,7 +60,7 @@ class ModelGenotyping(PyroModule):
     linkage of plasmids to their corresponding barcodes, and barcode-specific expression rates and 
     noise:
     
-    $$\lambda_{s,g} = \mu_{s} \sum_{r} A_{s,r} \sum_{g}G_{r,g} B_{g,b} k_{b} + \xi_{b}$$
+    $$\\lambda_{s,g} = \\mu_{s} \\sum_{r} A_{s,r} \\sum_{g}G_{r,g} B_{g,b} k_{b} + \\xi_{b}$$
 
     The per-nodule plasmid integration number, modeled as an expected count of integration events, 
     describes the probability distribution over the number of plasmid copies integrated per clone,
