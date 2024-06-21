@@ -1,7 +1,7 @@
 # 2020-04-15 08:58
 # elihei [<eheidari@student.ethz.ch>]
 
-install.packages("magrittr")
+install.packages("magrittr", dep=TRUE, repos = "http://cran.us.r-project.org")
 
 import_cran <- function(x) {
     if ( !require(x, character.only=TRUE) ) {
