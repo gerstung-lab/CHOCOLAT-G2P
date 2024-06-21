@@ -58,9 +58,16 @@ rm -r data_temp
 
 ## Notebooks
 
+After installing the necessary software and downloading the data, the results presented in the paper can be reproduced using the analysis notebooks located in the `notebooks` folder. Currently, the notebooks need to be run in the order listed below:
+
+1. `perturb-prob-inference.ipynb`: This notebook provides a general overview of the nodule positions, data preprocessing, and filtering. It also runs the "perturbation reporter to perturbation probability" Bayesian model for both the main data and sequential replicas.
+
+2. `perturb-prob-validation.ipynb`:In this notebook, we evaluate the performance of the reporter genes and validate the inferred perturbation status based on immunohistochemistry (IHC) and target gene expression. Additionally, we check the consistency of the inferred probabilities across sequential replicas.
+
+3. `genotype-phenotype-relatios.ipynb`: This notebook offers a general overview of tumour-intrinsic expression and the tumour microenvironment (TME). It also identifies the correlations between genotype and phenotype features.
 
 ## Citation
-```
+```bibtex
 @article {Breinig2024.05.14.593940,
 	author = {Breinig, Marco and Lomakin, Artem and Heidari, Elyas and Ritter, Michael and Rukhovich, Gleb and B{\"o}se, Lio and Butthof, Luise and Wendler-Link, Lena and Wiethoff, Hendrik and Poth, Tanja and Sahm, Felix and Schirmacher, Peter and Stegle, Oliver and Gerstung, Moritz and Tschaharganeh, Darjus F.},
 	title = {Integrated combinatorial functional genomics and spatial transcriptomics of tumors decodes genotype to phenotype relationships},
