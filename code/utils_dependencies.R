@@ -1,6 +1,7 @@
 # 2020-04-15 08:58
 # elihei [<eheidari@student.ethz.ch>]
-# /Volumes/Projects/scGCN/code/R/dep.R 
+
+install.packages("magrittr")
 
 import_cran <- function(x) {
     if ( !require(x, character.only=TRUE) ) {
