@@ -2,6 +2,15 @@
   <img src="img/chocolat-g2p-logo.svg" width="300"/>
 </p>
 
+## Integrated combinatorial functional genomics and spatial transcriptomics of tumors decodes genotype to phenotype relationships
+
+[[`Paper`](https://www.biorxiv.org/content/10.1101/2024.05.14.593940v1)] [[`BibTeX`](#Citation)]
+
+Marco Breinig*, Artem Lomakin*, Elyas Heidari*, Michael Ritter, Gleb Rukhovich, Lio Böse, Luise Butthof, Lena Wendler-Link, Hendrik Wiethoff, Tanja Poth, Felix Sahm, Peter Schirmacher, Oliver Stegle, Moritz Gerstung, Darjus F. Tschaharganeh (*Equal Contribution)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
 ## Repository overview
 This repository conatins code and analysis for [CHOCOLAT-G2P](## "Charting Higher Order COmbinations Leveraging Analysis of Tissue - Genotype to Phenotype"), an experimental method that allows for highly parallel combinatorial screening of drivers with integrated spatial transcriptomics. In the associated manuscript, we generated hundreds of independent clones with highly combinatorial genotypes within a single liver of a model animal. We integrated genotype and phenotype information, including tumour-intrinsic and tumour microenvironment (TME) states, to investigate deeply the relationship between genetics and phenotypical states of liver cancer.
 
@@ -21,7 +30,7 @@ cd CHOCOLAT-G2P
 ```
 conda create -n chocolat-g2p python=3.11
 conda activate chocolat-g2p
-conda install -r requirements.yml
+pip install -r requirements.txt
 ```
 
 3. If you want to run phenotyping scripts we reccomend to create a separate environment with python and R dependencies:
@@ -29,9 +38,11 @@ conda install -r requirements.yml
 ```
 conda create -n chocolat-phenotype python=3.9.12 r-base=4.3.0
 conda activate chocolat-phenotype
-conda install -r code/phenotype-requirements.yml
+pip install -r code/phenotype-requirements.txt
 Rscript code/utils_dependencies.R
 ```
+
+The instalation of all packages make take a few minutes.
 
 ## Data availability
 
