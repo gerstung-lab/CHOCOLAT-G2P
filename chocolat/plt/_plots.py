@@ -25,7 +25,8 @@ colours = {
     "shtrp53-plasmid": "#d55e00",
     "shPTEN-plasmid" : "#009e73", 
     "shMLL3-plasmid": "#0072b2", 
-    "mtCtnnb1": "#000000",  
+    "mtCtnnb1": "#000000",
+    "intersection": "white"
 }
 
 def plot_annotations(adata, numerical_colum, exclude_mask=None, ax=None, border=40, lims=None, color_cycler=None):
@@ -289,3 +290,32 @@ def plot_average_barcode_expression(adata_dict, plasmids_df, plasmids, keys=None
     ax.spines['right'].set_visible(False)
     ax.set_ylabel('Average Expression')
     ax.set_title(f'Average barcode expression aggregated per {", ".join(keys)}')
+    
+def plot_glmm_weights(mean_marginal, variance_marginal, plasmids, feature_list, dim=None):
+    if dim is None:
+        dim = (1, len(feature_list))
+    plt.figure(figsize=(4*dim[1],4*dim[0]), dpi=100)
+
+    for c, f in enumerate(feature_list):
+        plt.subplot(dim[0],dim[1],c+1)
+        ax = plt.gca()
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.yaxis.set_visible(False)
+        offset = 0  
+        for i in range(len(plasmids) + 1):
+            if c == 0:
+                plt.text(-3, offset-0.2, (plasmids + ['intersection'])[i].split('-')[0])
+
+            mean = mean_marginal[c,i]
+            std = variance_marginal[c,i]**0.5
+            colour = colours[(plasmids + ['intersection'])[i]]
+            plt.scatter(mean, offset, c=colour, linewidths=1.5, edgecolors='k', s=80, zorder=5, )
+            plt.plot([mean - 3*std, mean + 3*std], [offset, offset], lw=1.5, color='k', zorder=2)
+            offset -= 2
+
+        plt.axvline(0, c='k', linestyle='--', zorder=-10)
+        plt.xlim(-3, 3)
+        plt.title(f'{f} expr.')
+
