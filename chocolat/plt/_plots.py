@@ -240,13 +240,31 @@ def plot_spatial_barcodes_average(adata_dict, plasmids_df, plasmids, keys=None):
                 ax.set_title(plasmids[i])
 
 def plot_average_barcode_expression(adata_dict, plasmids_df, plasmids, keys=None, ax=None):
-    
+    """
+    Plots the average barcode expression for a list of plasmids across multiple samples.
+
+    Parameters
+    ----------
+    adata_dict : dict
+        Dictionary of AnnData objects, indexed by sample keys.
+    plasmids_df : pandas.DataFrame
+        DataFrame containing information about the plasmids.
+    plasmids : list of str
+        List of plasmid names to be plotted.
+    keys : list of str, optional
+        List of sample keys to be included in the plot. If None, all keys in `adata_dict` are used.
+    ax : matplotlib.axes.Axes, optional
+        Axis object to draw the plot onto, otherwise uses the current axis.
+
+    Returns
+    -------
+    None
+    """
+
     reporter_genes_list = []
     reporter_raw_counts = []
     plasmids_df_ordered = plasmids_df.set_index('Name', drop=False).loc[reporters_order]
     for pl in plasmids:
-        # sorted_names = sorted(plasmids_df_ordered[plasmids_df_ordered['List'] == pl]['Name'].values,
-        #                       key=lambda x: next((i for i, prefix in enumerate(order) if x.startswith(prefix)), len(order)))
         sorted_names = plasmids_df_ordered[plasmids_df_ordered['List'] == pl]['Name'].values
         reporter_genes_list.append(sorted_names)
 
@@ -292,6 +310,28 @@ def plot_average_barcode_expression(adata_dict, plasmids_df, plasmids, keys=None
     ax.set_title(f'Average barcode expression aggregated per {", ".join(keys)}')
     
 def plot_glmm_weights(mean_marginal, variance_marginal, plasmids, feature_list, dim=None):
+    """
+    Plots the weights of the Generalised Linear Mixed Models (GLMM) for each feature and plasmid.
+    Whiskers are 3σ 
+
+    Parameters
+    ----------
+    mean_marginal : numpy.ndarray
+        Mean of the marginal posterior distributions of the model parameters.
+    variance_marginal : numpy.ndarray
+        Variance of the marginal posterior distributions of the model parameters.
+    plasmids : list of str
+        List of plasmid names.
+    feature_list : list of str
+        List of feature names.
+    dim : tuple of int, optional
+        Dimensions of the subplot grid. Default is (1, len(feature_list)).
+
+    Returns
+    -------
+    None
+    """
+
     if dim is None:
         dim = (1, len(feature_list))
     plt.figure(figsize=(4*dim[1],4*dim[0]), dpi=100)
@@ -318,4 +358,83 @@ def plot_glmm_weights(mean_marginal, variance_marginal, plasmids, feature_list, 
         plt.axvline(0, c='k', linestyle='--', zorder=-10)
         plt.xlim(-3, 3)
         plt.title(f'{f} expr.')
+        
+def plot_seqential_pred_correlations(predicted_composition_df, correspondent_annotations, corresponding_samples, corresponding_column):
+    """
+    Plots the sequential correlations between predicted compositions and annotations for multiple samples.
+
+    Parameters
+    ----------
+    predicted_composition_df : pandas.DataFrame
+        DataFrame containing the predicted compositions.
+    correspondent_annotations : pandas.DataFrame
+        DataFrame containing the correspondence annotations.
+    corresponding_samples : list of tuple of str
+        List of tuples with sample names for the primary and replica.
+    corresponding_column : list of str
+        List of column names corresponding to the annotations.
+
+    Returns
+    -------
+    None
+    """
+    xs = []
+    ys = []
+
+    for i in range(np.array(corresponding_samples).shape[0]):
+        k1 = corresponding_samples[i][0]
+        k2 = corresponding_samples[i][1]
+        cc = corresponding_column[i]
+
+        correspondence_df_sub = correspondent_annotations.set_index(['sample_name', 'new_annotation']).loc[k1][cc].dropna()
+
+        if i == 0:
+            k1 = corresponding_samples[0][1]
+            k2 = corresponding_samples[i][0]
+
+            ordered_inedex2 = correspondence_df_sub.index
+            ordered_inedex2 = np.array(list(ordered_inedex2))[np.isin(ordered_inedex2, predicted_composition_df.loc[k2].index)]
+            ordered_inedex1 = correspondence_df_sub.loc[ordered_inedex2].values.astype(int).astype(str)
+
+        else:
+            ordered_inedex1 = correspondence_df_sub.index
+            ordered_inedex1 = np.array(list(ordered_inedex1))[np.isin(ordered_inedex1, predicted_composition_df.loc[k1].index)]
+            ordered_inedex2 = correspondence_df_sub.loc[ordered_inedex1].values.astype(int).astype(str)
+
+        xs.append(predicted_composition_df.loc[k1].loc[ordered_inedex1])
+        ys.append(predicted_composition_df.loc[k2].loc[ordered_inedex2])
+
+        print(k1, k2, len(ordered_inedex1))
+
+    xs = pd.concat(xs)
+
+    ys = pd.concat(ys)
+
+
+    fig, axs = plt.subplots(1,8, figsize=(24,3))
+    for i in range(8):
+        x, y = xs[plasmids_ordered_list[i]].values, ys[plasmids_ordered_list[i]].values
+
+        corr_coefficient, _ = pearsonr(x, y)
+        slope, _, _, _ = np.linalg.lstsq(x[:, np.newaxis], y, rcond=None)
+        # best_fit_line = slope * x
+
+        axs[i].plot([0,1],[0,float(slope)], color='k', linestyle='--')
+        axs[i].scatter(x,y, s=10, alpha=0.5, c='tomato')
+        # axs[i].plot([xmin,xmax],[y,y],c='tomato', alpha=0.2, lw=0.2)
+        # axs[i].plot([x,x],[ymin,ymax],c='tomato', alpha=0.2, lw=0.2)
+
+        axs[i].text(0.1, 0.9, f'r = {np.round(corr_coefficient,2)}')
+        axs[i].set_xlim(0,1)
+        axs[i].set_ylim(0,1)
+        axs[i].spines[['top', 'right']].set_visible(False)
+        axs[i].set_title(plasmids_ordered_list[i])
+        axs[i].set_ylabel('Replica')
+        axs[i].set_xlabel('Primary')
+        axs[i].set_xticks([0,0.5,1])
+        axs[i].set_xticklabels([0,0.5,1])
+        axs[i].set_yticks([0,0.5,1])
+        axs[i].set_yticklabels([0,0.5,1])
+
+    plt.tight_layout()
 
