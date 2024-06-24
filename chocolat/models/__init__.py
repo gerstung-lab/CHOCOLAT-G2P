@@ -1,2 +1,2 @@
 from ._genotype_model import ModelGenotyping, GuideGenotyping, train_genotype_models, prepare_data4genotype_models
-from ._glm_model import ModelGlmmBinary, GuideGlmmBinary, prepare_data4binary_glmm, load_ihc_annotation, train_glm_models
+from ._glm_model import ModelGlmmBernoulli, GuideGlmmBernoulli, prepare_data4glmm, load_ihc_annotation, train_glm_models, ModelGlmmPoisson, GuideGlmmPoisson
