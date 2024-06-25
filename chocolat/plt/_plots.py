@@ -437,4 +437,43 @@ def plot_seqential_pred_correlations(predicted_composition_df, correspondent_ann
         axs[i].set_yticklabels([0,0.5,1])
 
     plt.tight_layout()
+    
+def plot_genotype_enrichment_OR(df_combined_per_nodule, ph, plasmid_list, rest_group=None, ax=None):
+    selected_nodules = df_combined_per_nodule[df_combined_per_nodule[ph] == 1].index
+    if rest_group is None:
+        rest_nodules = df_combined_per_nodule[~(df_combined_per_nodule[ph] == 1)].index
+    else:
+        rest_nodules = df_combined_per_nodule[df_combined_per_nodule[rest_group] == 1].index
+
+    selected_plasmid_dat = df_combined_per_nodule.loc[selected_nodules, plasmid_list]
+    rest_plasmid_dat = df_combined_per_nodule.loc[rest_nodules, plasmid_list]
+
+    sim_genotypes_selected = np.array([np.random.binomial(1,np.repeat(selected_plasmid_dat.values[None,:,i],
+                                                                      20000, axis=0)) for i in range(8)])
+    sim_genotypes_full = np.array([np.random.binomial(1,np.repeat(rest_plasmid_dat.values[None,:,i],
+                                                                      20000, axis=0)) for i in range(8)])
+    if ax is None:
+        fig, ax = plt.subplots(1,1,figsize=(3, 8))
+    epsilon = 1e-10
+    na, ne = np.sum(sim_genotypes_full[:,:,:] == 0, axis=2) + epsilon, np.sum(sim_genotypes_full[:,:,:] == 1, axis=2) + epsilon
+    pa, pe = np.sum(sim_genotypes_selected[:,:,:] == 0, axis=2) + epsilon, np.sum(sim_genotypes_selected[:,:,:] == 1, axis=2) + epsilon
+
+    log_or = (pe * na) / (pa * ne)
+    # log_or = log_onr[:,~np.any(np.isinf(log_or), 0)]
+    for i, c in enumerate([colours[x] for x in plasmid_list]):
+        ax.scatter(i, np.percentile(log_or[:], 50, 1)[i], edgecolor='k', s=100, color=c, lw=2, zorder=5);
+#         print((np.log10(log_or[i]) > 0).mean())
+    ax.plot([np.arange(8), np.arange(8)], [np.percentile(log_or[:], 5, 1), np.percentile(log_or[:], 95, 1)], c='k');
+
+    ax.axhline(1, c='k', linestyle='--')
+    ax.spines[['right', 'top', 'bottom']].set_visible(False)
+    ax.set_xlabel('Plasmid')
+    ax.set_ylim(2**(-4),2**(4))
+    ax.set_yscale('log', base=2)
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.set_ylabel('Odds ratios')
+    ax.set_title(ph + ' ' + str(df_combined_per_nodule[ph].sum()))
+    # ax.invert_xaxis()
+
 
