@@ -1,0 +1,1 @@
+from ._stats_modelling import genotype_prob, resample_population, marginal_frequency, compute_odds_ratio_plasmids, compute_observed_genotypes_probability, hdpi_sim_genotypes_counts, simulate_hnull_genotype_probability, dif_sim_genotypes

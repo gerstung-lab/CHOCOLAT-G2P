@@ -12,7 +12,7 @@ from tqdm import tqdm
 import pandas as pd
 import os
 
-
+from ._model_tools import get_sample_prior_parametrisation
 
 class ModelGlmmBernoulli(PyroModule):
     """
@@ -402,7 +402,7 @@ def prepare_data4glmm(adata_dict, samples_dict, observations_dict,
     prior_parametrisation_dict = {} 
            
     for key in keys:
-        prior_parametrisation_dict[key] = _get_sample_prior_parametrisation(samples_dict[key])
+        prior_parametrisation_dict[key] = get_sample_prior_parametrisation(samples_dict[key])
         
     region_ids = {k: v.obs[region_id_column].astype('object').fillna('NaN').astype('category').cat.codes.copy() for k, v in adata_dict.items()}
     region_ids_isnormal = {k: (v.obs[region_id_column].astype('object').fillna('NaN').astype('category') == 'NaN').copy() for k, v in adata_dict.items()}
@@ -539,61 +539,6 @@ def train_glm_models(prior_parametrisation_tensor_dict,
 
                 
     return mean_marginal, variance_marginal, loss_list
-
-def _estimate_beta_params(samples):
-    """
-    Estimates the alpha and beta parameters of a Beta distribution using the method of moments.
-
-    Parameters
-    ----------
-    samples : array-like
-        Sample data for which the Beta distribution parameters are estimated.
-
-    Returns
-    -------
-    alpha_est : float
-        Estimated alpha parameter.
-    beta_est : float
-        Estimated beta parameter.
-    """
-
-    samples = np.array(samples)
-    # Calculate the sample mean
-    sample_mean = np.mean(samples, axis=0)
-    
-    # Calculate the sample variance
-    sample_var = np.var(samples, axis=0)
-    
-    # Use the method of moments to estimate the alpha and beta parameters
-    common_factor = (sample_mean * (1 - sample_mean) / sample_var) - 1
-    alpha_est = sample_mean * common_factor
-    beta_est = (1 - sample_mean) * common_factor
-    
-    return alpha_est, beta_est
-
-def _get_sample_prior_parametrisation(samples):
-    """
-    Computes the prior parametrisation for a given sample using Beta distribution parameters
-    and the log-normal distribution for spot sensitivity.
-
-    Parameters
-    ----------
-    samples : dict
-        Dictionary containing sample data with keys 'region_params' and 'spot_sensitivity'.
-
-    Returns
-    -------
-    dict
-        Dictionary with estimated parameters for 'region_params' and 'spot_sensitivity'.
-    """
-
-    alpha, beta = _estimate_beta_params(samples['region_params'][:,:,:,0])
-    
-    mu = np.log(samples['spot_sensitivity'][:,:,0]).mean(0)
-    sigma = np.log(samples['spot_sensitivity'][:,:,0]).std(0)
-    
-    return {'region_params': [alpha, beta], 'spot_sensitivity': [mu, sigma]}
-
 
 def _reindex_region_ids(region_ids, keys):
     """
