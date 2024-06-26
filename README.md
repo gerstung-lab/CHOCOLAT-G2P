@@ -19,21 +19,21 @@ This repository conatins code and analysis for [CHOCOLAT-G2P](## "Charting Highe
 </p>
 
 ## Instalation 
-The analysis was conducted on Ubuntu 22.04.4 LTS with 40GB RAM and an available GPU. While GPUs are not essential, they are highly recommended to accelerate the inference steps. We suggest installing Python and R packages in a clean Conda environment.
+The analysis was performed on Ubuntu 22.04.4 LTS, equipped with 40GB RAM and an available GPU. Although GPUs are not mandatory, they significantly accelerate the inference processes (~20h -> ~10 minutes). We recommend installing Python and R packages within a clean Conda environment.
 
-1. Donwload the repository
+1. Repository Download
 ```
 git clone https://github.com/gerstung-lab/CHOCOLAT-G2P.git
 cd CHOCOLAT-G2P
 ```
-2. If you want to follow genotyping and genotype-phenotype analysis steps, install python requirements as following
+2. Setting Up for Genotyping and Genotype-Phenotype Analysis:
 ```
 conda create -n chocolat-g2p python=3.11
 conda activate chocolat-g2p
 pip install -r requirements.txt
 ```
 
-3. If you want to run phenotyping scripts we reccomend to create a separate environment with python and R dependencies:
+3. Setting Up for Phenotyping Scripts:
 
 ```
 conda create -n chocolat-phenotype python=3.9.12 r-base=4.3.0
@@ -42,7 +42,7 @@ pip install -r code/phenotype-requirements.txt
 Rscript code/utils_dependencies.R
 ```
 
-The instalation of all packages make take a few minutes.
+We advise setting up a separate environment for phenotyping to prevent conflicts between package versions. Installing all packages may take a few minutes. Installation of R packages may take longer.
 
 ## Data availability
 
@@ -58,13 +58,15 @@ rm -r data_temp
 
 ## Notebooks
 
-After installing the necessary software and downloading the data, the results presented in the paper can be reproduced using the analysis notebooks located in the `notebooks` folder. Currently, the notebooks need to be run in the order listed below:
+After setting up the environment and downloading the data, the results presented in the paper can be reproduced using the analysis notebooks located in the `notebooks` folder. Currently, it is required to run notebooks in the order listed below:
 
-1. `perturb-prob-inference.ipynb`: This notebook provides a general overview of the nodule positions, data preprocessing, and filtering. It also runs the "perturbation reporter to perturbation probability" Bayesian model for both the main data and sequential replicas.
+1. `perturb-prob-inference.ipynb`: This notebook provides a general overview of the nodule positions, data preprocessing, and filtering. It trains the Bayesian model that converts spatial distirbution of the perturbation reporters to perturbation probability. We train this model on both the primary data and sequential replicas.
 
-2. `perturb-prob-validation.ipynb`:In this notebook, we evaluate the performance of the reporter genes and validate the inferred perturbation status based on immunohistochemistry (IHC) and target gene expression. Additionally, we check the consistency of the inferred probabilities across sequential replicas.
+2. `perturb-prob-validation.ipynb`: This notebook assesses the performance of the reporter genes and validates the inferred perturbation statuses using immunohistochemistry (IHC) and target gene expression. It also examines the consistency of inferred probabilities across sequential replicas.
 
-3. `genotype-phenotype-relatios.ipynb`: This notebook offers a general overview of tumour-intrinsic expression and the tumour microenvironment (TME). It also identifies the correlations between genotype and phenotype features.
+3. `perturb-prob-analysis.ipynb`: This notebook provides a detailed analysis of the genetic composition of the generated cancer population. It translates the inferred statuses of 8 perturbations into the probability of 256 genotypes and analyses the collective population properties, detects pairwise genetic epistasis, and highlights tumorigenic potential of each genotype.
+
+4. `geno-pheno-relations.ipynb`: This notebook reviews tumour-intrinsic expression and the tumour microenvironment (TME). It identifies correlations between genotype and phenotype features in a dual approach: firstly, by grouping phenotypes and examining the plasmid frequency odds ratios; secondly, by predicting gene expression based on the inferred plasmid probabilities with GLMM.
 
 ## Citation
 ```bibtex
