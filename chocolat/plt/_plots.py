@@ -439,6 +439,28 @@ def plot_seqential_pred_correlations(predicted_composition_df, correspondent_ann
     plt.tight_layout()
     
 def plot_genotype_enrichment_OR(df_combined_per_nodule, ph, plasmid_list, rest_group=None, ax=None):
+    """
+    Plots the odds ratios of genotype enrichment for specified plasmids.
+
+    Parameters
+    ----------
+    df_combined_per_nodule : pandas.DataFrame
+        DataFrame containing combined data for each nodule.
+    ph : str
+        Phenotype column to be used for selecting nodules.
+    plasmid_list : list of str
+        List of plasmids to be included in the analysis.
+    rest_group : str, optional
+        Column name for the rest group of nodules. If None, the rest group is defined as all nodules
+        not in the selected group. Default is None.
+    ax : matplotlib.axes.Axes, optional
+        Axis object to draw the plot onto, otherwise creates a new axis.
+
+    Returns
+    -------
+    None
+    """
+
     selected_nodules = df_combined_per_nodule[df_combined_per_nodule[ph] == 1].index
     if rest_group is None:
         rest_nodules = df_combined_per_nodule[~(df_combined_per_nodule[ph] == 1)].index
@@ -475,5 +497,40 @@ def plot_genotype_enrichment_OR(df_combined_per_nodule, ph, plasmid_list, rest_g
     ax.set_ylabel('Odds ratios')
     ax.set_title(ph + ' ' + str(df_combined_per_nodule[ph].sum()))
     # ax.invert_xaxis()
+
+def plot_heatmap_cutouts(data_matrix, data_names, gene_name, l, r, ax=None):
+    """
+    Plots a heatmap cutout around a specified gene. Corresponds to the heatmap of GLM weights.
+
+    Parameters
+    ----------
+    data_matrix : numpy.ndarray
+        Matrix containing the data to be plotted.
+    data_names : list of str
+        List of gene names corresponding to the columns of the data matrix.
+    gene_name : str
+        Name of the gene around which the heatmap cutout is plotted.
+    l : int
+        Number of genes to include to the left of the specified gene.
+    r : int
+        Number of genes to include to the right of the specified gene.
+    ax : matplotlib.axes.Axes, optional
+        Axis object to draw the plot onto, otherwise creates a new axis.
+
+    Returns
+    -------
+    None
+    """
+
+    fp = data_names.index(gene_name)
+    dat_matrix_sub = data_matrix[:,fp-l:fp+r]
+    gene_name_list_ordered_sub = data_names[fp-l:fp+r]
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=((r+l)*0.25,2))
+    ax.imshow(dat_matrix_sub, aspect='auto', cmap='RdBu_r', vmax=1, vmin=-1, interpolation='none')
+    ax.set_xticks(np.arange(len(gene_name_list_ordered_sub))) 
+    ax.set_xticklabels(gene_name_list_ordered_sub, rotation=90)
+    ax.set_aspect('equal')
 
 

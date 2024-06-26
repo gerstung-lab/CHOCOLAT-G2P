@@ -1,3 +1,3 @@
 from ._genotype_model import ModelGenotyping, GuideGenotyping, train_genotype_models, prepare_data4genotype_models
 from ._glm_model import ModelGlmmBernoulli, GuideGlmmBernoulli, prepare_data4glmm, load_ihc_annotation, train_glm_models, ModelGlmmPoisson, GuideGlmmPoisson
-from ._model_tools import get_sample_prior_parametrisation
+from ._model_tools import get_sample_prior_parametrisation, get_model_weights_array
