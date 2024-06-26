@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import anndata
 import scanpy as sc
 import numpy as np
+import pandas as pd
+from scipy.stats import pearsonr
 from chocolat.preprocessing import compute_quantiles
 
 ### Order the reporters
@@ -359,7 +361,7 @@ def plot_glmm_weights(mean_marginal, variance_marginal, plasmids, feature_list, 
         plt.xlim(-3, 3)
         plt.title(f'{f} expr.')
         
-def plot_seqential_pred_correlations(predicted_composition_df, correspondent_annotations, corresponding_samples, corresponding_column):
+def plot_seqential_pred_correlations(predicted_composition_df, correspondent_annotations, corresponding_samples, corresponding_column, plasmids_ordered_list):
     """
     Plots the sequential correlations between predicted compositions and annotations for multiple samples.
 
@@ -373,6 +375,8 @@ def plot_seqential_pred_correlations(predicted_composition_df, correspondent_ann
         List of tuples with sample names for the primary and replica.
     corresponding_column : list of str
         List of column names corresponding to the annotations.
+    plasmids_ordered_list : list of str
+        List of plasmid names that defines the plotting order.
 
     Returns
     -------
@@ -417,12 +421,9 @@ def plot_seqential_pred_correlations(predicted_composition_df, correspondent_ann
 
         corr_coefficient, _ = pearsonr(x, y)
         slope, _, _, _ = np.linalg.lstsq(x[:, np.newaxis], y, rcond=None)
-        # best_fit_line = slope * x
 
         axs[i].plot([0,1],[0,float(slope)], color='k', linestyle='--')
         axs[i].scatter(x,y, s=10, alpha=0.5, c='tomato')
-        # axs[i].plot([xmin,xmax],[y,y],c='tomato', alpha=0.2, lw=0.2)
-        # axs[i].plot([x,x],[ymin,ymax],c='tomato', alpha=0.2, lw=0.2)
 
         axs[i].text(0.1, 0.9, f'r = {np.round(corr_coefficient,2)}')
         axs[i].set_xlim(0,1)
@@ -533,4 +534,6 @@ def plot_heatmap_cutouts(data_matrix, data_names, gene_name, l, r, ax=None):
     ax.set_xticklabels(gene_name_list_ordered_sub, rotation=90)
     ax.set_aspect('equal')
 
+def blend_color(color1, color2, blend_factor):
+    return [a + blend_factor * (b - a) for a, b in zip(color1, color2)]
 
